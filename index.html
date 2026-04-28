@@ -12,65 +12,17 @@
 
 <script>
 const categoryModel = {
-  "Household": [
-    "AGL gas & electricity",
-    "Water",
-    "Rates",
-    "Home insurance"
-  ],
-  "Transport": [
-    "Petrol",
-    "Car insurance",
-    "Car rego"
-  ],
-  "Living": [
-    "Groceries",
-    "Chemist"
-  ],
-  "Lifestyle": [
-    "Coffee",
-    "Takeaway",
-    "Steve Lou entertainment"
-  ],
-  "Kids": [
-    "Kids swimming lessons",
-    "Mila gymnastics",
-    "Mila Acro",
-    "Mila school fees",
-    "Miscellaneous kids"
-  ],
-  "Subscriptions": [
-    "Netflix",
-    "Amazon",
-    "Spotify",
-    "Stronglifts 5x5 app",
-    "Doordash app subscription",
-    "Hayu",
-    "Disney",
-    "HBO",
-    "Apple storage",
-    "Google storage",
-    "MCC membership"
-  ],
-  "Utilities / Personal": [
-    "Phone and internet",
-    "Gym"
-  ],
-  "Buffer / Price Increases": [
-    "General buffer",
-    "Annual increases",
-    "Unexpected bill movement"
-  ],
-  "Income": [
-    "Salary",
-    "Bonus",
-    "Other income"
-  ],
-  "Investing / Savings": [
-    "ETFs",
-    "Super",
-    "Savings"
-  ]
+  "Household": ["AGL gas & electricity", "Water", "Rates", "Home insurance"],
+  "Transport": ["Petrol", "Car insurance", "Car rego"],
+  "Living": ["Groceries", "Chemist"],
+  "Lifestyle": ["Coffee", "Takeaway", "Steve Lou entertainment"],
+  "Kids": ["Kids swimming lessons", "Mila gymnastics", "Mila Acro", "Mila school fees", "Miscellaneous kids"],
+  "Subscriptions": ["Netflix", "Amazon", "Spotify", "Stronglifts 5x5 app", "Doordash app subscription", "Hayu", "Disney", "HBO", "Apple storage", "Google storage", "MCC membership"],
+  "Utilities / Personal": ["Phone and internet", "Gym"],
+  "Buffer / Price Increases": ["General buffer", "Annual increases", "Unexpected bill movement"],
+  "Needs Review": ["Needs Review", "ATM Withdrawal", "Unmapped Transaction"],
+  "Income": ["Salary", "Bonus", "Other income"],
+  "Investing / Savings": ["ETFs", "Super", "Savings"]
 };
 
 const budgets = {
@@ -85,7 +37,6 @@ const budgets = {
   "Investing / Savings": 0
 };
 
-// Clean budget start date
 const budgetStartDate = "2026-05-01";
 
 let transactions = JSON.parse(localStorage.getItem("transactions") || "[]");
@@ -96,7 +47,27 @@ function save() {
 }
 
 function dollars(value) {
-  return "$" + Number(value).toFixed(2);
+  return "$" + Number(value || 0).toFixed(2);
+}
+
+function normaliseText(text) {
+  return String(text || "").toUpperCase().trim();
+}
+
+function parseDate(value) {
+  if (!value) return "";
+  const raw = String(value).trim();
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+  const parts = raw.split(/[\/\-]/);
+  if (parts.length === 3) {
+    let [d, m, y] = parts;
+    if (y.length === 2) y = "20" + y;
+    return `${y.padStart(4,"0")}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
+  }
+
+  return raw;
 }
 
 function isThisMonth(dateString) {
@@ -117,17 +88,29 @@ function monthsElapsedSinceBudgetStart() {
   return Math.max(months, 1);
 }
 
+function transactionCountsForBudget(t) {
+  return t.type === "expense";
+}
+
+function transactionCountsForIncome(t) {
+  return t.type === "income";
+}
+
 function addTransaction(e) {
   e.preventDefault();
   const form = e.target;
+  const amount = parseFloat(form.amount.value);
 
   transactions.push({
     id: Date.now(),
     date: form.date.value,
-    amount: parseFloat(form.amount.value),
+    amount,
+    type: amount >= 0 ? "income" : "expense",
     parent: form.parent.value,
     sub: form.sub.value,
-    note: form.note.value
+    note: form.note.value,
+    hidden: false,
+    imported: false
   });
 
   save();
@@ -138,13 +121,53 @@ function deleteTransaction(id) {
   save();
 }
 
+function editTransaction(id) {
+  const t = transactions.find(t => t.id === id);
+  if (!t) return;
+
+  const newAmount = prompt("Amount", t.amount);
+  if (newAmount === null) return;
+
+  const newParent = prompt("Parent category", t.parent);
+  if (newParent === null) return;
+
+  const validSubs = categoryModel[newParent] || categoryModel["Needs Review"];
+  const newSub = prompt("Sub-category", t.sub);
+  if (newSub === null) return;
+
+  const newNote = prompt("Note / merchant", t.note || "");
+  if (newNote === null) return;
+
+  t.amount = parseFloat(newAmount);
+  t.parent = categoryModel[newParent] ? newParent : "Needs Review";
+  t.sub = validSubs.includes(newSub) ? newSub : "Needs Review";
+  t.note = newNote;
+
+  if (t.parent === "Needs Review") {
+    t.type = "needs_review";
+    t.hidden = false;
+  } else if (t.amount >= 0 && t.parent === "Income") {
+    t.type = "income";
+    t.hidden = false;
+  } else {
+    t.type = "expense";
+    t.hidden = false;
+  }
+
+  save();
+}
+
+function getVisibleTransactions() {
+  return transactions.filter(t => !t.hidden);
+}
+
 function getThisMonthTransactions() {
-  return transactions.filter(t => isThisMonth(t.date));
+  return getVisibleTransactions().filter(t => isThisMonth(t.date));
 }
 
 function getTransactionsSinceBudgetStart() {
   const start = new Date(budgetStartDate);
-  return transactions.filter(t => new Date(t.date) >= start);
+  return getVisibleTransactions().filter(t => new Date(t.date) >= start);
 }
 
 function getThisMonthParentTotals() {
@@ -152,7 +175,7 @@ function getThisMonthParentTotals() {
   Object.keys(budgets).forEach(cat => totals[cat] = 0);
 
   getThisMonthTransactions().forEach(t => {
-    if (t.amount < 0 && totals[t.parent] !== undefined) {
+    if (transactionCountsForBudget(t) && totals[t.parent] !== undefined) {
       totals[t.parent] += Math.abs(t.amount);
     }
   });
@@ -165,7 +188,7 @@ function getAccrualParentTotals() {
   Object.keys(budgets).forEach(cat => totals[cat] = 0);
 
   getTransactionsSinceBudgetStart().forEach(t => {
-    if (t.amount < 0 && totals[t.parent] !== undefined) {
+    if (transactionCountsForBudget(t) && totals[t.parent] !== undefined) {
       totals[t.parent] += Math.abs(t.amount);
     }
   });
@@ -180,7 +203,7 @@ function getSubTotals(parent, mode = "month") {
     : getThisMonthTransactions();
 
   txSource
-    .filter(t => t.parent === parent && t.amount < 0)
+    .filter(t => t.parent === parent && transactionCountsForBudget(t))
     .forEach(t => {
       totals[t.sub] = (totals[t.sub] || 0) + Math.abs(t.amount);
     });
@@ -192,18 +215,14 @@ function getMonthlySummary() {
   const monthTx = getThisMonthTransactions();
 
   const income = monthTx
-    .filter(t => t.amount > 0)
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const expenses = monthTx
-    .filter(t => t.amount < 0)
+    .filter(transactionCountsForIncome)
     .reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
-  return {
-    income,
-    expenses,
-    surplus: income - expenses
-  };
+  const expenses = monthTx
+    .filter(transactionCountsForBudget)
+    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+  return { income, expenses, surplus: income - expenses };
 }
 
 function getAccrualSummary() {
@@ -235,18 +254,221 @@ function updateSubCategories(parentValue) {
     .join("");
 }
 
+function parseCSV(text) {
+  const rows = [];
+  let current = "";
+  let row = [];
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      current += '"';
+      i++;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      row.push(current.trim());
+      current = "";
+    } else if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (current || row.length) {
+        row.push(current.trim());
+        rows.push(row);
+      }
+      current = "";
+      row = [];
+      if (char === "\r" && next === "\n") i++;
+    } else {
+      current += char;
+    }
+  }
+
+  if (current || row.length) {
+    row.push(current.trim());
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+function classifyTransaction(description, amount) {
+  const d = normaliseText(description);
+
+  if (d.includes("ATM") || d.includes("CASH WITHDRAWAL") || d.includes("WITHDRAWAL")) {
+    return { type: "needs_review", parent: "Needs Review", sub: "ATM Withdrawal", hidden: false };
+  }
+
+  if (
+    d.includes("TRANSFER") ||
+    d.includes("TFR") ||
+    d.includes("NETBANK") ||
+    d.includes("PAYMENT RECEIVED") ||
+    d.includes("CREDIT CARD PAYMENT") ||
+    d.includes("BPAY TO") ||
+    d.includes("DIRECT CREDIT")
+  ) {
+    return { type: "ignored", parent: "Ignored", sub: "Internal Transfer", hidden: true };
+  }
+
+  if (
+    d.includes("SALARY") ||
+    d.includes("PAYROLL") ||
+    d.includes("WAGES")
+  ) {
+    return { type: "income", parent: "Income", sub: "Salary", hidden: false };
+  }
+
+  const rules = [
+    { keys: ["WOOLWORTHS", "COLES", "ALDI", "IGA"], parent: "Living", sub: "Groceries" },
+    { keys: ["CHEMIST", "PHARMACY", "PRICELINE"], parent: "Living", sub: "Chemist" },
+
+    { keys: ["7-ELEVEN", "BP ", "SHELL", "AMPOL", "CALTEX", "UNITED PETROLEUM"], parent: "Transport", sub: "Petrol" },
+    { keys: ["VICROADS", "REGISTRATION"], parent: "Transport", sub: "Car rego" },
+
+    { keys: ["AGL"], parent: "Household", sub: "AGL gas & electricity" },
+    { keys: ["SOUTH EAST WATER", "YARRA VALLEY WATER"], parent: "Household", sub: "Water" },
+    { keys: ["COUNCIL", "RATES"], parent: "Household", sub: "Rates" },
+    { keys: ["INSURANCE"], parent: "Household", sub: "Home insurance" },
+
+    { keys: ["NETFLIX"], parent: "Subscriptions", sub: "Netflix" },
+    { keys: ["SPOTIFY"], parent: "Subscriptions", sub: "Spotify" },
+    { keys: ["APPLE"], parent: "Subscriptions", sub: "Apple storage" },
+    { keys: ["GOOGLE"], parent: "Subscriptions", sub: "Google storage" },
+    { keys: ["DISNEY"], parent: "Subscriptions", sub: "Disney" },
+    { keys: ["HAYU"], parent: "Subscriptions", sub: "Hayu" },
+    { keys: ["BINGE", "HBO", "MAX"], parent: "Subscriptions", sub: "HBO" },
+    { keys: ["DOORDASH PASS"], parent: "Subscriptions", sub: "Doordash app subscription" },
+    { keys: ["STRONGLIFTS"], parent: "Subscriptions", sub: "Stronglifts 5x5 app" },
+    { keys: ["MCC"], parent: "Subscriptions", sub: "MCC membership" },
+
+    { keys: ["TELSTRA", "OPTUS", "AUSSIE BROADBAND", "TPG", "NBN"], parent: "Utilities / Personal", sub: "Phone and internet" },
+    { keys: ["GYM", "ANYTIME FITNESS", "GENESIS", "FITNESS"], parent: "Utilities / Personal", sub: "Gym" },
+
+    { keys: ["SWIM", "SWIMMING"], parent: "Kids", sub: "Kids swimming lessons" },
+    { keys: ["GYMNASTICS"], parent: "Kids", sub: "Mila gymnastics" },
+    { keys: ["ACRO"], parent: "Kids", sub: "Mila Acro" },
+    { keys: ["SCHOOL"], parent: "Kids", sub: "Mila school fees" },
+
+    { keys: ["CAFE", "COFFEE"], parent: "Lifestyle", sub: "Coffee" },
+    { keys: ["UBER EATS", "DOORDASH", "MENULOG", "MCDONALD", "KFC", "GRILLD", "PIZZA"], parent: "Lifestyle", sub: "Takeaway" },
+    { keys: ["CINEMA", "TICKETEK", "TICKETMASTER", "RESTAURANT", "BAR"], parent: "Lifestyle", sub: "Steve Lou entertainment" }
+  ];
+
+  for (const rule of rules) {
+    if (rule.keys.some(k => d.includes(k))) {
+      return { type: "expense", parent: rule.parent, sub: rule.sub, hidden: false };
+    }
+  }
+
+  if (amount > 0) {
+    return { type: "income", parent: "Income", sub: "Other income", hidden: false };
+  }
+
+  return { type: "needs_review", parent: "Needs Review", sub: "Unmapped Transaction", hidden: false };
+}
+
+function makeFingerprint(tx) {
+  return [
+    tx.date,
+    Number(tx.amount).toFixed(2),
+    normaliseText(tx.note)
+  ].join("|");
+}
+
+function findColumn(headers, candidates) {
+  const normalised = headers.map(h => normaliseText(h));
+  for (const candidate of candidates) {
+    const index = normalised.findIndex(h => h.includes(candidate));
+    if (index !== -1) return index;
+  }
+  return -1;
+}
+
+function importCSVFile(file) {
+  const reader = new FileReader();
+
+  reader.onload = function(evt) {
+    const rows = parseCSV(evt.target.result).filter(r => r.length > 1);
+    if (rows.length < 2) {
+      alert("No transactions found.");
+      return;
+    }
+
+    const headers = rows[0];
+
+    const dateIndex = findColumn(headers, ["DATE"]);
+    const descIndex = findColumn(headers, ["DESCRIPTION", "TRANSACTION", "DETAILS", "NARRATIVE"]);
+    const amountIndex = findColumn(headers, ["AMOUNT"]);
+
+    if (dateIndex === -1 || descIndex === -1 || amountIndex === -1) {
+      alert("Could not identify Date, Description and Amount columns.");
+      return;
+    }
+
+    const existing = new Set(transactions.map(makeFingerprint));
+    let imported = 0;
+    let skipped = 0;
+
+    rows.slice(1).forEach(row => {
+      const date = parseDate(row[dateIndex]);
+      const note = row[descIndex];
+      const amount = parseFloat(String(row[amountIndex]).replace(/[$,]/g, ""));
+
+      if (!date || !note || isNaN(amount)) return;
+
+      const classification = classifyTransaction(note, amount);
+
+      const tx = {
+        id: Date.now() + Math.random(),
+        date,
+        amount,
+        type: classification.type,
+        parent: classification.parent,
+        sub: classification.sub,
+        note,
+        hidden: classification.hidden,
+        imported: true
+      };
+
+      const fingerprint = makeFingerprint(tx);
+
+      if (existing.has(fingerprint)) {
+        skipped++;
+        return;
+      }
+
+      existing.add(fingerprint);
+      transactions.push(tx);
+      imported++;
+    });
+
+    save();
+    alert(`Import complete. Imported ${imported}. Skipped duplicates ${skipped}.`);
+  };
+
+  reader.readAsText(file);
+}
+
+function handleCSVUpload(e) {
+  const files = Array.from(e.target.files || []);
+  files.forEach(importCSVFile);
+  e.target.value = "";
+}
+
 function render() {
   const monthlySummary = getMonthlySummary();
   const accrualSummary = getAccrualSummary();
-
   const monthlyParentTotals = getThisMonthParentTotals();
   const accrualParentTotals = getAccrualParentTotals();
-
   const monthsElapsed = monthsElapsedSinceBudgetStart();
 
   const parentOptions = Object.keys(categoryModel)
     .map(parent => `<option value="${parent}">${parent}</option>`)
     .join("");
+
+  const needsReviewCount = getVisibleTransactions().filter(t => t.type === "needs_review").length;
 
   const accrualRows = Object.keys(budgets).map(parent => {
     const monthlyBudget = budgets[parent];
@@ -256,14 +478,9 @@ function render() {
     const subTotals = getSubTotals(parent, "accrual");
 
     const subBreakdown = Object.keys(subTotals).length
-      ? Object.entries(subTotals)
-          .sort((a, b) => b[1] - a[1])
-          .map(([sub, amount]) => `
-            <div class="sub-row">
-              <span>${sub}</span>
-              <strong>${dollars(amount)}</strong>
-            </div>
-          `).join("")
+      ? Object.entries(subTotals).sort((a, b) => b[1] - a[1]).map(([sub, amount]) => `
+        <div class="sub-row"><span>${sub}</span><strong>${dollars(amount)}</strong></div>
+      `).join("")
       : `<div class="empty">No spend since budget start</div>`;
 
     return `
@@ -277,12 +494,8 @@ function render() {
             ${balance >= 0 ? dollars(balance) + " ahead" : dollars(Math.abs(balance)) + " behind"}
           </div>
         </summary>
-        <div class="budget-line">
-          Monthly accrual: ${dollars(monthlyBudget)} · Months elapsed: ${monthsElapsed}
-        </div>
-        <div class="sub-breakdown">
-          ${subBreakdown}
-        </div>
+        <div class="budget-line">Monthly accrual: ${dollars(monthlyBudget)} · Months elapsed: ${monthsElapsed}</div>
+        <div class="sub-breakdown">${subBreakdown}</div>
       </details>
     `;
   }).join("");
@@ -294,14 +507,9 @@ function render() {
     const subTotals = getSubTotals(parent, "month");
 
     const subBreakdown = Object.keys(subTotals).length
-      ? Object.entries(subTotals)
-          .sort((a, b) => b[1] - a[1])
-          .map(([sub, amount]) => `
-            <div class="sub-row">
-              <span>${sub}</span>
-              <strong>${dollars(amount)}</strong>
-            </div>
-          `).join("")
+      ? Object.entries(subTotals).sort((a, b) => b[1] - a[1]).map(([sub, amount]) => `
+        <div class="sub-row"><span>${sub}</span><strong>${dollars(amount)}</strong></div>
+      `).join("")
       : `<div class="empty">No spend this month</div>`;
 
     return `
@@ -315,12 +523,8 @@ function render() {
             ${variance >= 0 ? dollars(variance) + " left" : dollars(Math.abs(variance)) + " over"}
           </div>
         </summary>
-        <div class="budget-line">
-          Monthly budget: ${dollars(budget)} · Actual: ${dollars(actual)}
-        </div>
-        <div class="sub-breakdown">
-          ${subBreakdown}
-        </div>
+        <div class="budget-line">Monthly budget: ${dollars(budget)} · Actual: ${dollars(actual)}</div>
+        <div class="sub-breakdown">${subBreakdown}</div>
       </details>
     `;
   }).join("");
@@ -332,11 +536,14 @@ function render() {
       <div class="transaction">
         <div>
           <strong>${t.sub}</strong>
-          <div class="muted">${t.parent} · ${t.date}${t.note ? " · " + t.note : ""}</div>
+          <div class="muted">${t.parent} · ${t.date}${t.note ? " · " + t.note : ""}${t.type === "needs_review" ? " · Needs review" : ""}</div>
         </div>
         <div>
           <strong>${t.amount < 0 ? "-" : "+"}${dollars(Math.abs(t.amount))}</strong>
-          <button onclick="deleteTransaction(${t.id})">Delete</button>
+          <div style="display:flex; gap:6px; margin-top:6px;">
+            <button onclick="editTransaction(${t.id})">Edit</button>
+            <button onclick="deleteTransaction(${t.id})">Delete</button>
+          </div>
         </div>
       </div>
     `).join("");
@@ -347,37 +554,29 @@ function render() {
 
       <section class="summary">
         <h2>This Month Cash View</h2>
-        <div class="metric">
-          <span>Income</span>
-          <strong>${dollars(monthlySummary.income)}</strong>
-        </div>
-        <div class="metric">
-          <span>Expenses</span>
-          <strong>${dollars(monthlySummary.expenses)}</strong>
-        </div>
-        <div class="metric total">
-          <span>Cash surplus this month</span>
-          <strong>${dollars(monthlySummary.surplus)}</strong>
-        </div>
+        <div class="metric"><span>Income</span><strong>${dollars(monthlySummary.income)}</strong></div>
+        <div class="metric"><span>Expenses</span><strong>${dollars(monthlySummary.expenses)}</strong></div>
+        <div class="metric total"><span>Cash surplus this month</span><strong>${dollars(monthlySummary.surplus)}</strong></div>
       </section>
 
       <section class="summary">
         <h2>Category Balance</h2>
         <p class="muted">Accrual view from ${budgetStartDate}. This smooths annual, quarterly and uneven bills.</p>
-        <div class="metric">
-          <span>Budget accrued</span>
-          <strong>${dollars(accrualSummary.totalBudgetAccrued)}</strong>
-        </div>
-        <div class="metric">
-          <span>Actual spent</span>
-          <strong>${dollars(accrualSummary.totalActualSpent)}</strong>
-        </div>
+        <div class="metric"><span>Budget accrued</span><strong>${dollars(accrualSummary.totalBudgetAccrued)}</strong></div>
+        <div class="metric"><span>Actual spent</span><strong>${dollars(accrualSummary.totalActualSpent)}</strong></div>
         <div class="metric total">
           <span>Overall balance</span>
           <strong class="${accrualSummary.balance >= 0 ? "good" : "bad"}">
             ${accrualSummary.balance >= 0 ? dollars(accrualSummary.balance) + " ahead" : dollars(Math.abs(accrualSummary.balance)) + " behind"}
           </strong>
         </div>
+        ${needsReviewCount ? `<p class="bad"><strong>${needsReviewCount}</strong> transaction(s) need review.</p>` : ""}
+      </section>
+
+      <section>
+        <h2>Import CSV</h2>
+        <p class="muted">Import CBA CSVs. Internal transfers and credit card repayments are hidden. ATM withdrawals and unmapped items go to Needs Review.</p>
+        <input type="file" accept=".csv" multiple onchange="handleCSVUpload(event)" />
       </section>
 
       <section>
