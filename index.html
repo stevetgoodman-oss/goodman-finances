@@ -1,6 +1,5 @@
-from pathlib import Path
 
-html = r'''<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -90,6 +89,39 @@ main {
   background: var(--navy);
   color: white;
   box-shadow: 0 8px 18px rgba(11,31,58,0.18);
+}
+
+.mode-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  background: #E2E8F0;
+  border-radius: 999px;
+  padding: 5px;
+  margin: 8px 0 16px;
+}
+
+.mode-toggle button {
+  border: 0;
+  border-radius: 999px;
+  padding: 11px 12px;
+  font-weight: 850;
+  background: transparent;
+  color: var(--navy);
+}
+
+.mode-toggle button.active {
+  background: white;
+  color: var(--navy);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
+}
+
+.mode-note {
+  margin-top: -6px;
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .hero-card {
@@ -462,6 +494,7 @@ const budgets = {
 const budgetStartDate = "2026-05-01";
 
 let activeTab = "dashboard";
+let viewMode = "monthly";
 let transactions = JSON.parse(localStorage.getItem("transactions") || "[]");
 
 function save() {
@@ -531,9 +564,31 @@ function monthsElapsedSinceBudgetStart() {
   );
 }
 
+const categoryBehaviour = {
+  "Mortgage": "target",
+  "Investing / Savings": "target",
+  "Household": "spend",
+  "Transport": "spend",
+  "Living": "spend",
+  "Lifestyle": "spend",
+  "Kids": "spend",
+  "Subscriptions": "spend",
+  "Utilities / Personal": "spend",
+  "Buffer / Price Increases": "spend"
+};
+
 function setTab(tab) {
   activeTab = tab;
   render();
+}
+
+function setViewMode(mode) {
+  viewMode = mode;
+  render();
+}
+
+function isTargetCategory(parent) {
+  return categoryBehaviour[parent] === "target";
 }
 
 function transactionCountsForBudget(t) {
@@ -645,12 +700,48 @@ function getAccrualSummary() {
   };
 }
 
-function getCategoryStatus(actual, budget) {
+function getCategoryStatus(actual, budget, parent) {
   if (budget === 0) return { label: "Tracking", cls: "status-good", fill: "progress-fill", pct: 0 };
+
   const pct = actual / budget;
-  if (pct > 1) return { label: "Over", cls: "status-bad", fill: "progress-fill bad", pct: Math.min(pct * 100, 100) };
-  if (pct >= 0.8) return { label: "Watch", cls: "status-watch", fill: "progress-fill watch", pct: pct * 100 };
-  return { label: "Healthy", cls: "status-good", fill: "progress-fill", pct: pct * 100 };
+  const cappedPct = Math.min(pct * 100, 100);
+
+  if (isTargetCategory(parent)) {
+    if (pct >= 1) return { label: "Target met", cls: "status-good", fill: "progress-fill", pct: cappedPct };
+    if (pct >= 0.8) return { label: "Close", cls: "status-watch", fill: "progress-fill watch", pct: cappedPct };
+    return { label: "Behind target", cls: "status-bad", fill: "progress-fill bad", pct: cappedPct };
+  }
+
+  if (pct > 1) return { label: "Over", cls: "status-bad", fill: "progress-fill bad", pct: cappedPct };
+  if (pct >= 0.8) return { label: "Watch", cls: "status-watch", fill: "progress-fill watch", pct: cappedPct };
+  return { label: "Healthy", cls: "status-good", fill: "progress-fill", pct: cappedPct };
+}
+
+function getCategoryResultText(parent, actual, budget, mode) {
+  const difference = budget - actual;
+
+  if (isTargetCategory(parent)) {
+    if (difference <= 0) return dollars(Math.abs(difference)) + " over target";
+    return dollars(difference) + " short of target";
+  }
+
+  if (mode === "monthly") {
+    if (difference >= 0) return dollars(difference) + " remaining";
+    return dollars(Math.abs(difference)) + " over";
+  }
+
+  if (difference >= 0) return dollars(difference) + " ahead";
+  return dollars(Math.abs(difference)) + " behind";
+}
+
+function getCategoryResultClass(parent, actual, budget) {
+  const difference = budget - actual;
+
+  if (isTargetCategory(parent)) {
+    return difference <= 0 ? "good" : "bad";
+  }
+
+  return difference >= 0 ? "good" : "bad";
 }
 
 function updateSubCategories(parentValue) {
@@ -949,11 +1040,20 @@ function renderDashboard() {
   const monthlyParentTotals = getThisMonthParentTotals();
   const accrualParentTotals = getAccrualParentTotals();
   const monthsElapsed = monthsElapsedSinceBudgetStart();
-  const needsReviewCount = getNeedsReviewTransactions().length;
+  const needsReview = getNeedsReviewTransactions();
+  const needsReviewCount = needsReview.length;
+  const needsReviewTotal = needsReview.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+  const activeTotals = viewMode === "monthly" ? monthlyParentTotals : accrualParentTotals;
+  const activeTitle = viewMode === "monthly" ? "This Month vs Budget" : "Accrual Balance by Category";
+  const activeSubtitle = viewMode === "monthly" ? "Cash awareness" : "Accrual truth";
+  const activeNote = viewMode === "monthly"
+    ? "Monthly mode shows short-term cash control and uses “remaining” language."
+    : "Accrual mode smooths annual, quarterly and uneven bills from the budget start date.";
 
   let biggestDriver = "No spending yet";
   let biggestDriverAmount = 0;
-  const driverEntries = Object.entries(accrualParentTotals)
+  const driverEntries = Object.entries(activeTotals)
     .filter(([parent, amount]) => amount > 0)
     .sort((a, b) => b[1] - a[1]);
 
@@ -977,24 +1077,37 @@ function renderDashboard() {
       <div class="health-card">
         <span class="label">Needs review</span>
         <strong class="value">${needsReviewCount}</strong>
-        <div class="note">${needsReviewCount ? "Action required" : "All clear"}</div>
+        <div class="note">${needsReviewCount ? dollars(needsReviewTotal) + " unallocated" : "All clear"}</div>
       </div>
     </div>
   `;
 
-  const accrualRows = Object.keys(budgets).map(parent => {
+  const categoryRows = Object.keys(budgets).map(parent => {
     const monthlyBudget = budgets[parent];
-    const accrued = monthlyBudget * monthsElapsed;
-    const actual = accrualParentTotals[parent] || 0;
-    const balance = accrued - actual;
-    const subTotals = getSubTotals(parent, "accrual");
-    const status = getCategoryStatus(actual, accrued || monthlyBudget);
+    const comparisonBudget = viewMode === "monthly" ? monthlyBudget : monthlyBudget * monthsElapsed;
+    const actual = activeTotals[parent] || 0;
+    const resultText = getCategoryResultText(parent, actual, comparisonBudget, viewMode);
+    const resultClass = getCategoryResultClass(parent, actual, comparisonBudget);
+    const status = getCategoryStatus(actual, comparisonBudget || monthlyBudget, parent);
+    const subTotals = getSubTotals(parent, viewMode === "monthly" ? "month" : "accrual");
+
+    const topSubText = viewMode === "monthly"
+      ? `${dollars(actual)} of ${dollars(monthlyBudget)} used`
+      : `Accrued ${dollars(comparisonBudget)} · Spent ${dollars(actual)}`;
+
+    const detailLine = viewMode === "monthly"
+      ? `Monthly budget: ${dollars(monthlyBudget)} · Actual: ${dollars(actual)}`
+      : `Monthly accrual: ${dollars(monthlyBudget)} · Months elapsed: ${monthsElapsed}`;
+
+    const emptyText = viewMode === "monthly"
+      ? "No spend this month"
+      : "No spend since budget start";
 
     const subBreakdown = Object.keys(subTotals).length
       ? Object.entries(subTotals).sort((a, b) => b[1] - a[1]).map(([sub, amount]) => `
         <div class="sub-row"><span>${sub}</span><strong>${dollars(amount)}</strong></div>
       `).join("")
-      : `<div class="empty">No spend since budget start</div>`;
+      : `<div class="empty">${emptyText}</div>`;
 
     return `
       <details class="category-card">
@@ -1002,54 +1115,18 @@ function renderDashboard() {
           <div class="category-top">
             <div>
               <div class="category-name">${parent}</div>
-              <div class="category-sub">Accrued ${dollars(accrued)} · Spent ${dollars(actual)}</div>
-              <span class="status-chip ${balance >= 0 ? "status-good" : "status-bad"}">
-                ${balance >= 0 ? dollars(balance) + " ahead" : dollars(Math.abs(balance)) + " behind"}
-              </span>
-            </div>
-            <div class="category-amount">${dollars(actual)}</div>
-          </div>
-          <div class="progress">
-            <div class="${status.fill}" style="width:${status.pct}%"></div>
-          </div>
-        </summary>
-        <div class="budget-line">Monthly accrual: ${dollars(monthlyBudget)} · Months elapsed: ${monthsElapsed}</div>
-        <div>${subBreakdown}</div>
-      </details>
-    `;
-  }).join("");
-
-  const monthlyRows = Object.keys(budgets).map(parent => {
-    const budget = budgets[parent];
-    const actual = monthlyParentTotals[parent] || 0;
-    const variance = budget - actual;
-    const status = getCategoryStatus(actual, budget);
-    const subTotals = getSubTotals(parent, "month");
-
-    const subBreakdown = Object.keys(subTotals).length
-      ? Object.entries(subTotals).sort((a, b) => b[1] - a[1]).map(([sub, amount]) => `
-        <div class="sub-row"><span>${sub}</span><strong>${dollars(amount)}</strong></div>
-      `).join("")
-      : `<div class="empty">No spend this month</div>`;
-
-    return `
-      <details class="category-card">
-        <summary>
-          <div class="category-top">
-            <div>
-              <div class="category-name">${parent}</div>
-              <div class="category-sub">${dollars(actual)} of ${dollars(budget)} used</div>
+              <div class="category-sub">${topSubText}</div>
               <span class="status-chip ${status.cls}">${status.label}</span>
             </div>
-            <div class="category-amount ${variance >= 0 ? "good" : "bad"}">
-              ${variance >= 0 ? dollars(variance) + " left" : dollars(Math.abs(variance)) + " over"}
+            <div class="category-amount ${resultClass}">
+              ${resultText}
             </div>
           </div>
           <div class="progress">
             <div class="${status.fill}" style="width:${status.pct}%"></div>
           </div>
         </summary>
-        <div class="budget-line">Monthly budget: ${dollars(budget)} · Actual: ${dollars(actual)}</div>
+        <div class="budget-line">${detailLine}</div>
         <div>${subBreakdown}</div>
       </details>
     `;
@@ -1058,11 +1135,12 @@ function renderDashboard() {
   return `
     <section class="hero-card">
       <div class="hero-label">Financial position</div>
-      <div class="hero-value ${accrualSummary.balance >= 0 ? "" : "bad"}">
+      <div class="hero-value">
         ${accrualSummary.balance >= 0 ? dollars(accrualSummary.balance) + " ahead" : dollars(Math.abs(accrualSummary.balance)) + " behind"}
       </div>
       <div class="hero-context">
-        Biggest spend driver: <strong>${biggestDriver}${biggestDriverAmount ? " · " + dollars(biggestDriverAmount) : ""}</strong>
+        Biggest ${viewMode === "monthly" ? "monthly" : "accrual"} spend driver:
+        <strong>${biggestDriver}${biggestDriverAmount ? " · " + dollars(biggestDriverAmount) : ""}</strong>
       </div>
       <div class="hero-grid">
         <div class="hero-metric">
@@ -1071,12 +1149,22 @@ function renderDashboard() {
         </div>
         <div class="hero-metric">
           <span>Review queue</span>
-          <strong>${needsReviewCount}</strong>
+          <strong>${needsReviewCount} · ${dollars(needsReviewTotal)}</strong>
         </div>
       </div>
     </section>
 
     ${healthCards}
+
+    <div class="section-title">
+      <h2>Dashboard view</h2>
+      <span>${activeSubtitle}</span>
+    </div>
+    <div class="mode-toggle">
+      <button class="${viewMode === "monthly" ? "active" : ""}" onclick="setViewMode('monthly')">Monthly</button>
+      <button class="${viewMode === "accrual" ? "active" : ""}" onclick="setViewMode('accrual')">Accrual</button>
+    </div>
+    <div class="mode-note">${activeNote}</div>
 
     <div class="section-title">
       <h2>This Month Cash View</h2>
@@ -1105,25 +1193,19 @@ function renderDashboard() {
     </section>
 
     <div class="section-title">
-      <h2>Accrual Balance by Category</h2>
+      <h2>${activeTitle}</h2>
       <span>Tap to drill down</span>
     </div>
-    ${accrualRows}
-
-    <div class="section-title">
-      <h2>This Month vs Budget</h2>
-      <span>Cash awareness</span>
-    </div>
-    ${monthlyRows}
+    ${categoryRows}
   `;
 }
-
 function renderTransactionHistory() {
   const parentOptions = Object.keys(categoryModel)
     .map(parent => `<option value="${parent}">${parent}</option>`)
     .join("");
 
   const needsReview = getNeedsReviewTransactions();
+  const needsReviewTotal = needsReview.reduce((sum, t) => sum + Math.abs(t.amount), 0);
   const allTransactions = getAllVisibleTransactions();
 
   const renderList = list => list.length
@@ -1171,7 +1253,7 @@ function renderTransactionHistory() {
 
     <div class="section-title">
       <h2>Needs Review</h2>
-      <span>${needsReview.length} items</span>
+      <span>${needsReview.length} items · ${dollars(needsReviewTotal)} unallocated</span>
     </div>
     ${renderList(needsReview)}
 
@@ -1210,8 +1292,4 @@ function render() {
 render();
 </script>
 </body>
-</html>'''
-
-path = Path("/mnt/data/goodman-finances-redesign-index.html")
-path.write_text(html, encoding="utf-8")
-print(f"Created {path} ({path.stat().st_size:,} bytes)")
+</html>
