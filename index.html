@@ -490,6 +490,71 @@ button.secondary {
 .bad { color: var(--red); }
 .watch { color: var(--amber); }
 
+
+.wealth-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.wealth-card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 14px;
+  box-shadow: 0 4px 14px rgba(15,23,42,0.04);
+}
+
+.wealth-card-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  color: var(--navy);
+  font-weight: 850;
+}
+
+.wealth-card-value {
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  color: var(--navy);
+  margin-top: 6px;
+}
+
+.wealth-breakdown {
+  margin-top: 10px;
+  border-top: 1px solid #F1F5F9;
+  padding-top: 8px;
+}
+
+.wealth-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.wealth-form-grid label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.wealth-form-grid input {
+  margin-top: 4px;
+}
+
+.delta {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+@media (max-width: 560px) {
+  .wealth-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 480px) {
   main { padding: 14px; padding-bottom: 80px; }
   .hero-value { font-size: 30px; }
@@ -536,6 +601,40 @@ let activeTab = "dashboard";
 let viewMode = "monthly";
 let editingId = null;
 let transactions = JSON.parse(localStorage.getItem("transactions") || "[]");
+
+const defaultWealth = {
+  baselineDate: "2026-05-01",
+  baseline: {
+    property: 0,
+    superSteve: 0,
+    superLou: 0,
+    etfVgs: 0,
+    etfVas: 0,
+    cash: 0,
+    mortgage: 0,
+    redraw: 0
+  },
+  current: {
+    property: 0,
+    superSteve: 0,
+    superLou: 0,
+    etfVgs: 0,
+    etfVas: 0,
+    cash: 0,
+    mortgage: 0,
+    redraw: 0
+  },
+  lastUpdated: null
+};
+
+let wealth = JSON.parse(localStorage.getItem("wealth") || JSON.stringify(defaultWealth));
+
+wealth = {
+  ...defaultWealth,
+  ...wealth,
+  baseline: { ...defaultWealth.baseline, ...(wealth.baseline || {}) },
+  current: { ...defaultWealth.current, ...(wealth.current || {}) }
+};
 
 function save() {
   localStorage.setItem("transactions", JSON.stringify(transactions));
@@ -1170,6 +1269,258 @@ function handleCSVUpload(e) {
   e.target.value = "";
 }
 
+
+function saveWealth() {
+  localStorage.setItem("wealth", JSON.stringify(wealth));
+  render();
+}
+
+function toNumber(value) {
+  const n = parseFloat(String(value || "0").replace(/[$,]/g, ""));
+  return isNaN(n) ? 0 : n;
+}
+
+function getWealthTotals(snapshot) {
+  const superTotal = toNumber(snapshot.superSteve) + toNumber(snapshot.superLou);
+  const etfTotal = toNumber(snapshot.etfVgs) + toNumber(snapshot.etfVas);
+  const assets =
+    toNumber(snapshot.property) +
+    superTotal +
+    etfTotal +
+    toNumber(snapshot.cash);
+
+  const netWealth = assets - toNumber(snapshot.mortgage);
+  const liquidity = toNumber(snapshot.cash) + toNumber(snapshot.redraw);
+
+  return {
+    superTotal,
+    etfTotal,
+    assets,
+    netWealth,
+    liquidity
+  };
+}
+
+function getWealthSummary() {
+  const baseline = getWealthTotals(wealth.baseline);
+  const current = getWealthTotals(wealth.current);
+
+  const netDelta = current.netWealth - baseline.netWealth;
+  const netDeltaPct = baseline.netWealth ? (netDelta / baseline.netWealth) * 100 : 0;
+
+  return { baseline, current, netDelta, netDeltaPct };
+}
+
+function deltaText(current, baseline, invert = false) {
+  const delta = current - baseline;
+  const pct = baseline ? (delta / baseline) * 100 : 0;
+  const sign = delta >= 0 ? "+" : "-";
+  const absText = dollars(Math.abs(delta));
+  const pctText = Math.abs(pct).toFixed(1) + "%";
+
+  const displayDelta = `${sign}${absText} (${sign}${pctText})`;
+  return displayDelta;
+}
+
+function deltaClass(current, baseline, invert = false) {
+  const delta = current - baseline;
+  if (delta === 0) return "";
+  if (invert) return delta < 0 ? "good" : "bad";
+  return delta > 0 ? "good" : "bad";
+}
+
+function saveWealthSnapshot(e) {
+  e.preventDefault();
+  const form = e.target;
+
+  wealth.baselineDate = form.baselineDate.value || "2026-05-01";
+
+  wealth.baseline = {
+    property: toNumber(form.baselineProperty.value),
+    superSteve: toNumber(form.baselineSuperSteve.value),
+    superLou: toNumber(form.baselineSuperLou.value),
+    etfVgs: toNumber(form.baselineEtfVgs.value),
+    etfVas: toNumber(form.baselineEtfVas.value),
+    cash: toNumber(form.baselineCash.value),
+    mortgage: toNumber(form.baselineMortgage.value),
+    redraw: toNumber(form.baselineRedraw.value)
+  };
+
+  wealth.current = {
+    property: toNumber(form.currentProperty.value),
+    superSteve: toNumber(form.currentSuperSteve.value),
+    superLou: toNumber(form.currentSuperLou.value),
+    etfVgs: toNumber(form.currentEtfVgs.value),
+    etfVas: toNumber(form.currentEtfVas.value),
+    cash: toNumber(form.currentCash.value),
+    mortgage: toNumber(form.currentMortgage.value),
+    redraw: toNumber(form.currentRedraw.value)
+  };
+
+  wealth.lastUpdated = new Date().toISOString().slice(0, 10);
+  saveWealth();
+}
+
+function renderWealthRow(label, current, baseline, invert = false) {
+  return `
+    <div class="metric-row">
+      <span>${label}</span>
+      <div style="text-align:right">
+        <strong>${dollars(current)}</strong>
+        <div class="delta ${deltaClass(current, baseline, invert)}">${deltaText(current, baseline, invert)}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderWealthCard(title, current, baseline, breakdownHtml = "", invert = false) {
+  return `
+    <details class="wealth-card">
+      <summary>
+        <div class="wealth-card-title">
+          <span>${title}</span>
+          <span class="delta ${deltaClass(current, baseline, invert)}">${deltaText(current, baseline, invert)}</span>
+        </div>
+        <div class="wealth-card-value">${dollars(current)}</div>
+      </summary>
+      ${breakdownHtml ? `<div class="wealth-breakdown">${breakdownHtml}</div>` : ""}
+    </details>
+  `;
+}
+
+function renderWealth() {
+  const summary = getWealthSummary();
+  const b = wealth.baseline;
+  const c = wealth.current;
+  const baselineTotals = summary.baseline;
+  const currentTotals = summary.current;
+
+  const vgsPct = currentTotals.etfTotal ? (toNumber(c.etfVgs) / currentTotals.etfTotal) * 100 : 0;
+  const vasPct = currentTotals.etfTotal ? (toNumber(c.etfVas) / currentTotals.etfTotal) * 100 : 0;
+
+  return `
+    <section class="hero-card">
+      <div class="hero-label">Net wealth</div>
+      <div class="hero-value">${dollars(currentTotals.netWealth)}</div>
+      <div class="hero-context">
+        Since ${wealth.baselineDate}: 
+        <strong class="${summary.netDelta >= 0 ? "" : "bad"}">
+          ${summary.netDelta >= 0 ? "+" : "-"}${dollars(Math.abs(summary.netDelta))} (${summary.netDeltaPct >= 0 ? "+" : "-"}${Math.abs(summary.netDeltaPct).toFixed(1)}%)
+        </strong>
+      </div>
+      <div class="hero-grid">
+        <div class="hero-metric">
+          <span>Total assets</span>
+          <strong>${dollars(currentTotals.assets)}</strong>
+        </div>
+        <div class="hero-metric">
+          <span>Mortgage balance</span>
+          <strong>${dollars(c.mortgage)}</strong>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-title">
+      <h2>Wealth Snapshot</h2>
+      <span>Baseline vs current</span>
+    </div>
+
+    <div class="wealth-grid">
+      ${renderWealthCard(
+        "Property",
+        toNumber(c.property),
+        toNumber(b.property),
+        `<div class="sub-row"><span>Estimated home value</span><strong>${dollars(c.property)}</strong></div>`
+      )}
+
+      ${renderWealthCard(
+        "Superannuation",
+        currentTotals.superTotal,
+        baselineTotals.superTotal,
+        `
+          <div class="sub-row"><span>Steve super</span><strong>${dollars(c.superSteve)}</strong></div>
+          <div class="sub-row"><span>Lou super</span><strong>${dollars(c.superLou)}</strong></div>
+        `
+      )}
+
+      ${renderWealthCard(
+        "ETF Portfolio",
+        currentTotals.etfTotal,
+        baselineTotals.etfTotal,
+        `
+          <div class="sub-row"><span>Vanguard International / VGS</span><strong>${dollars(c.etfVgs)} · ${vgsPct.toFixed(0)}%</strong></div>
+          <div class="sub-row"><span>Vanguard Australian / VAS</span><strong>${dollars(c.etfVas)} · ${vasPct.toFixed(0)}%</strong></div>
+        `
+      )}
+
+      ${renderWealthCard(
+        "Cash / Savings",
+        toNumber(c.cash),
+        toNumber(b.cash),
+        `<div class="sub-row"><span>Accessible cash and savings</span><strong>${dollars(c.cash)}</strong></div>`
+      )}
+
+      ${renderWealthCard(
+        "Mortgage",
+        toNumber(c.mortgage),
+        toNumber(b.mortgage),
+        `<div class="sub-row"><span>Lower balance is positive progress</span><strong>${dollars(c.mortgage)}</strong></div>`,
+        true
+      )}
+    </div>
+
+    <div class="section-title">
+      <h2>Liquidity Position</h2>
+      <span>Resilience, not net wealth</span>
+    </div>
+    <section class="summary">
+      <p class="muted">Available redraw is shown as contingency access, not as a net wealth asset.</p>
+      <div class="metric-row"><span>Cash / savings</span><strong>${dollars(c.cash)}</strong></div>
+      <div class="metric-row"><span>Available redraw</span><strong>${dollars(c.redraw)}</strong></div>
+      <div class="metric-row total"><span>Total access</span><strong>${dollars(currentTotals.liquidity)}</strong></div>
+    </section>
+
+    <div class="section-title">
+      <h2>Update Wealth Snapshot</h2>
+      <span>Monthly ritual</span>
+    </div>
+    <section class="panel">
+      <form onsubmit="saveWealthSnapshot(event)">
+        <label class="muted">Baseline date</label>
+        <input type="date" name="baselineDate" value="${wealth.baselineDate}" required />
+
+        <h2>Baseline</h2>
+        <div class="wealth-form-grid">
+          <label>Property<input name="baselineProperty" type="number" step="1" value="${b.property}" /></label>
+          <label>Steve super<input name="baselineSuperSteve" type="number" step="1" value="${b.superSteve}" /></label>
+          <label>Lou super<input name="baselineSuperLou" type="number" step="1" value="${b.superLou}" /></label>
+          <label>VGS<input name="baselineEtfVgs" type="number" step="1" value="${b.etfVgs}" /></label>
+          <label>VAS<input name="baselineEtfVas" type="number" step="1" value="${b.etfVas}" /></label>
+          <label>Cash / savings<input name="baselineCash" type="number" step="1" value="${b.cash}" /></label>
+          <label>Mortgage<input name="baselineMortgage" type="number" step="1" value="${b.mortgage}" /></label>
+          <label>Redraw<input name="baselineRedraw" type="number" step="1" value="${b.redraw}" /></label>
+        </div>
+
+        <h2>Current</h2>
+        <div class="wealth-form-grid">
+          <label>Property<input name="currentProperty" type="number" step="1" value="${c.property}" /></label>
+          <label>Steve super<input name="currentSuperSteve" type="number" step="1" value="${c.superSteve}" /></label>
+          <label>Lou super<input name="currentSuperLou" type="number" step="1" value="${c.superLou}" /></label>
+          <label>VGS<input name="currentEtfVgs" type="number" step="1" value="${c.etfVgs}" /></label>
+          <label>VAS<input name="currentEtfVas" type="number" step="1" value="${c.etfVas}" /></label>
+          <label>Cash / savings<input name="currentCash" type="number" step="1" value="${c.cash}" /></label>
+          <label>Mortgage<input name="currentMortgage" type="number" step="1" value="${c.mortgage}" /></label>
+          <label>Redraw<input name="currentRedraw" type="number" step="1" value="${c.redraw}" /></label>
+        </div>
+
+        <button class="primary">Save Wealth Snapshot</button>
+      </form>
+      <p class="muted">Last updated: ${wealth.lastUpdated || "Not set"}</p>
+    </section>
+  `;
+}
+
+
 function renderDashboard() {
   const monthlySummary = getMonthlySummary();
   const accrualSummary = getAccrualSummary();
@@ -1419,9 +1770,16 @@ function render() {
       <div class="tabs">
         <button class="${activeTab === "dashboard" ? "active" : ""}" onclick="setTab('dashboard')">Dashboard</button>
         <button class="${activeTab === "transactions" ? "active" : ""}" onclick="setTab('transactions')">Transaction History</button>
+        <button class="${activeTab === "wealth" ? "active" : ""}" onclick="setTab('wealth')">Wealth</button>
       </div>
 
-      ${activeTab === "dashboard" ? renderDashboard() : renderTransactionHistory()}
+      ${
+        activeTab === "dashboard"
+          ? renderDashboard()
+          : activeTab === "transactions"
+          ? renderTransactionHistory()
+          : renderWealth()
+      }
     </main>
   `;
 
