@@ -1,216 +1,424 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Goodman Finances Inc.</title>
-<style>
-body { font-family: -apple-system; padding: 16px; background:#f5f5f5;}
-h1,h2 { margin-bottom:8px;}
-.card { background:white; padding:12px; margin-bottom:10px; border-radius:8px;}
-button { margin-top:6px;}
-select,input { width:100%; padding:8px; margin:4px 0;}
-.transaction { display:flex; justify-content:space-between; border-bottom:1px solid #eee; padding:6px 0;}
-.good { color:green;}
-.bad { color:red;}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Goodman Finances Inc.</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
-
 <body>
-
-<h1>Goodman Finances Inc.</h1>
-
-<button onclick="importCSV()">Import CSV</button>
-<input type="file" id="csvFile" style="display:none" />
-
-<h2>Add Transaction</h2>
-
-<input type="date" id="date">
-<input type="number" id="amount" placeholder="Amount (+ income / - expense)">
-
-<select id="account">
-<option>Direct Debit</option>
-<option>Household</option>
-<option>Credit Card</option>
-</select>
-
-<select id="parent"></select>
-<select id="sub"></select>
-
-<input type="text" id="note" placeholder="Note">
-
-<button onclick="addTransaction()">Add</button>
-
-<h2>This Month</h2>
-<div id="summary"></div>
-
-<h2>Transactions</h2>
-<div id="transactions"></div>
+<div id="app"></div>
 
 <script>
-
 const categoryModel = {
-"Household": ["AGL","Water","Rates","Home insurance"],
-"Transport": ["Petrol","Car insurance","Car rego"],
-"Living": ["Groceries","Chemist"],
-"Lifestyle": ["Coffee","Takeaway","Entertainment"],
-"Kids": ["Swimming","Gymnastics","Acro","School","Kids misc"],
-"Subscriptions": ["Netflix","Spotify","Apple","Google","Disney"],
-"Utilities": ["Phone","Gym"],
-"Buffer": ["General"]
+  "Household": [
+    "AGL gas & electricity",
+    "Water",
+    "Rates",
+    "Home insurance"
+  ],
+  "Transport": [
+    "Petrol",
+    "Car insurance",
+    "Car rego"
+  ],
+  "Living": [
+    "Groceries",
+    "Chemist"
+  ],
+  "Lifestyle": [
+    "Coffee",
+    "Takeaway",
+    "Steve Lou entertainment"
+  ],
+  "Kids": [
+    "Kids swimming lessons",
+    "Mila gymnastics",
+    "Mila Acro",
+    "Mila school fees",
+    "Miscellaneous kids"
+  ],
+  "Subscriptions": [
+    "Netflix",
+    "Amazon",
+    "Spotify",
+    "Stronglifts 5x5 app",
+    "Doordash app subscription",
+    "Hayu",
+    "Disney",
+    "HBO",
+    "Apple storage",
+    "Google storage",
+    "MCC membership"
+  ],
+  "Utilities / Personal": [
+    "Phone and internet",
+    "Gym"
+  ],
+  "Buffer / Price Increases": [
+    "General buffer",
+    "Annual increases",
+    "Unexpected bill movement"
+  ],
+  "Income": [
+    "Salary",
+    "Bonus",
+    "Other income"
+  ],
+  "Investing / Savings": [
+    "ETFs",
+    "Super",
+    "Savings"
+  ]
 };
 
 const budgets = {
-"Household": 891,
-"Transport": 371,
-"Living": 1275,
-"Lifestyle": 1133,
-"Kids": 635,
-"Subscriptions": 91,
-"Utilities": 279,
-"Buffer": 150
+  "Household": 891,
+  "Transport": 371,
+  "Living": 1275,
+  "Lifestyle": 1133,
+  "Kids": 635,
+  "Subscriptions": 91,
+  "Utilities / Personal": 279,
+  "Buffer / Price Increases": 150,
+  "Investing / Savings": 0
 };
+
+// Clean budget start date
+const budgetStartDate = "2026-05-01";
 
 let transactions = JSON.parse(localStorage.getItem("transactions") || "[]");
 
-function save(){
-localStorage.setItem("transactions", JSON.stringify(transactions));
+function save() {
+  localStorage.setItem("transactions", JSON.stringify(transactions));
+  render();
+}
+
+function dollars(value) {
+  return "$" + Number(value).toFixed(2);
+}
+
+function isThisMonth(dateString) {
+  const d = new Date(dateString);
+  const now = new Date();
+  return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+}
+
+function monthsElapsedSinceBudgetStart() {
+  const start = new Date(budgetStartDate);
+  const now = new Date();
+
+  const months =
+    (now.getFullYear() - start.getFullYear()) * 12 +
+    (now.getMonth() - start.getMonth()) +
+    1;
+
+  return Math.max(months, 1);
+}
+
+function addTransaction(e) {
+  e.preventDefault();
+  const form = e.target;
+
+  transactions.push({
+    id: Date.now(),
+    date: form.date.value,
+    amount: parseFloat(form.amount.value),
+    parent: form.parent.value,
+    sub: form.sub.value,
+    note: form.note.value
+  });
+
+  save();
+}
+
+function deleteTransaction(id) {
+  transactions = transactions.filter(t => t.id !== id);
+  save();
+}
+
+function getThisMonthTransactions() {
+  return transactions.filter(t => isThisMonth(t.date));
+}
+
+function getTransactionsSinceBudgetStart() {
+  const start = new Date(budgetStartDate);
+  return transactions.filter(t => new Date(t.date) >= start);
+}
+
+function getThisMonthParentTotals() {
+  const totals = {};
+  Object.keys(budgets).forEach(cat => totals[cat] = 0);
+
+  getThisMonthTransactions().forEach(t => {
+    if (t.amount < 0 && totals[t.parent] !== undefined) {
+      totals[t.parent] += Math.abs(t.amount);
+    }
+  });
+
+  return totals;
+}
+
+function getAccrualParentTotals() {
+  const totals = {};
+  Object.keys(budgets).forEach(cat => totals[cat] = 0);
+
+  getTransactionsSinceBudgetStart().forEach(t => {
+    if (t.amount < 0 && totals[t.parent] !== undefined) {
+      totals[t.parent] += Math.abs(t.amount);
+    }
+  });
+
+  return totals;
+}
+
+function getSubTotals(parent, mode = "month") {
+  const totals = {};
+  const txSource = mode === "accrual"
+    ? getTransactionsSinceBudgetStart()
+    : getThisMonthTransactions();
+
+  txSource
+    .filter(t => t.parent === parent && t.amount < 0)
+    .forEach(t => {
+      totals[t.sub] = (totals[t.sub] || 0) + Math.abs(t.amount);
+    });
+
+  return totals;
+}
+
+function getMonthlySummary() {
+  const monthTx = getThisMonthTransactions();
+
+  const income = monthTx
+    .filter(t => t.amount > 0)
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const expenses = monthTx
+    .filter(t => t.amount < 0)
+    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+  return {
+    income,
+    expenses,
+    surplus: income - expenses
+  };
+}
+
+function getAccrualSummary() {
+  const monthsElapsed = monthsElapsedSinceBudgetStart();
+  const accrualTotals = getAccrualParentTotals();
+
+  let totalBudgetAccrued = 0;
+  let totalActualSpent = 0;
+
+  Object.keys(budgets).forEach(parent => {
+    totalBudgetAccrued += budgets[parent] * monthsElapsed;
+    totalActualSpent += accrualTotals[parent] || 0;
+  });
+
+  return {
+    monthsElapsed,
+    totalBudgetAccrued,
+    totalActualSpent,
+    balance: totalBudgetAccrued - totalActualSpent
+  };
+}
+
+function updateSubCategories(parentValue) {
+  const subSelect = document.getElementById("sub");
+  if (!subSelect) return;
+
+  subSelect.innerHTML = categoryModel[parentValue]
+    .map(sub => `<option value="${sub}">${sub}</option>`)
+    .join("");
+}
+
+function render() {
+  const monthlySummary = getMonthlySummary();
+  const accrualSummary = getAccrualSummary();
+
+  const monthlyParentTotals = getThisMonthParentTotals();
+  const accrualParentTotals = getAccrualParentTotals();
+
+  const monthsElapsed = monthsElapsedSinceBudgetStart();
+
+  const parentOptions = Object.keys(categoryModel)
+    .map(parent => `<option value="${parent}">${parent}</option>`)
+    .join("");
+
+  const accrualRows = Object.keys(budgets).map(parent => {
+    const monthlyBudget = budgets[parent];
+    const accrued = monthlyBudget * monthsElapsed;
+    const actual = accrualParentTotals[parent] || 0;
+    const balance = accrued - actual;
+    const subTotals = getSubTotals(parent, "accrual");
+
+    const subBreakdown = Object.keys(subTotals).length
+      ? Object.entries(subTotals)
+          .sort((a, b) => b[1] - a[1])
+          .map(([sub, amount]) => `
+            <div class="sub-row">
+              <span>${sub}</span>
+              <strong>${dollars(amount)}</strong>
+            </div>
+          `).join("")
+      : `<div class="empty">No spend since budget start</div>`;
+
+    return `
+      <details class="card">
+        <summary>
+          <div>
+            <strong>${parent}</strong>
+            <div class="muted">Accrued ${dollars(accrued)} · Spent ${dollars(actual)}</div>
+          </div>
+          <div class="${balance >= 0 ? "good" : "bad"}">
+            ${balance >= 0 ? dollars(balance) + " ahead" : dollars(Math.abs(balance)) + " behind"}
+          </div>
+        </summary>
+        <div class="budget-line">
+          Monthly accrual: ${dollars(monthlyBudget)} · Months elapsed: ${monthsElapsed}
+        </div>
+        <div class="sub-breakdown">
+          ${subBreakdown}
+        </div>
+      </details>
+    `;
+  }).join("");
+
+  const monthlyRows = Object.keys(budgets).map(parent => {
+    const budget = budgets[parent];
+    const actual = monthlyParentTotals[parent] || 0;
+    const variance = budget - actual;
+    const subTotals = getSubTotals(parent, "month");
+
+    const subBreakdown = Object.keys(subTotals).length
+      ? Object.entries(subTotals)
+          .sort((a, b) => b[1] - a[1])
+          .map(([sub, amount]) => `
+            <div class="sub-row">
+              <span>${sub}</span>
+              <strong>${dollars(amount)}</strong>
+            </div>
+          `).join("")
+      : `<div class="empty">No spend this month</div>`;
+
+    return `
+      <details class="card">
+        <summary>
+          <div>
+            <strong>${parent}</strong>
+            <div class="muted">${dollars(actual)} spent this month</div>
+          </div>
+          <div class="${variance >= 0 ? "good" : "bad"}">
+            ${variance >= 0 ? dollars(variance) + " left" : dollars(Math.abs(variance)) + " over"}
+          </div>
+        </summary>
+        <div class="budget-line">
+          Monthly budget: ${dollars(budget)} · Actual: ${dollars(actual)}
+        </div>
+        <div class="sub-breakdown">
+          ${subBreakdown}
+        </div>
+      </details>
+    `;
+  }).join("");
+
+  const txRows = getThisMonthTransactions()
+    .slice()
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .map(t => `
+      <div class="transaction">
+        <div>
+          <strong>${t.sub}</strong>
+          <div class="muted">${t.parent} · ${t.date}${t.note ? " · " + t.note : ""}</div>
+        </div>
+        <div>
+          <strong>${t.amount < 0 ? "-" : "+"}${dollars(Math.abs(t.amount))}</strong>
+          <button onclick="deleteTransaction(${t.id})">Delete</button>
+        </div>
+      </div>
+    `).join("");
+
+  document.getElementById("app").innerHTML = `
+    <main>
+      <h1>Goodman Finances Inc.</h1>
+
+      <section class="summary">
+        <h2>This Month Cash View</h2>
+        <div class="metric">
+          <span>Income</span>
+          <strong>${dollars(monthlySummary.income)}</strong>
+        </div>
+        <div class="metric">
+          <span>Expenses</span>
+          <strong>${dollars(monthlySummary.expenses)}</strong>
+        </div>
+        <div class="metric total">
+          <span>Cash surplus this month</span>
+          <strong>${dollars(monthlySummary.surplus)}</strong>
+        </div>
+      </section>
+
+      <section class="summary">
+        <h2>Category Balance</h2>
+        <p class="muted">Accrual view from ${budgetStartDate}. This smooths annual, quarterly and uneven bills.</p>
+        <div class="metric">
+          <span>Budget accrued</span>
+          <strong>${dollars(accrualSummary.totalBudgetAccrued)}</strong>
+        </div>
+        <div class="metric">
+          <span>Actual spent</span>
+          <strong>${dollars(accrualSummary.totalActualSpent)}</strong>
+        </div>
+        <div class="metric total">
+          <span>Overall balance</span>
+          <strong class="${accrualSummary.balance >= 0 ? "good" : "bad"}">
+            ${accrualSummary.balance >= 0 ? dollars(accrualSummary.balance) + " ahead" : dollars(Math.abs(accrualSummary.balance)) + " behind"}
+          </strong>
+        </div>
+      </section>
+
+      <section>
+        <h2>Accrual Balance by Category</h2>
+        ${accrualRows}
+      </section>
+
+      <section>
+        <h2>This Month vs Budget</h2>
+        <p class="muted">Useful for cash awareness, but lumpy bills should be judged using Category Balance above.</p>
+        ${monthlyRows}
+      </section>
+
+      <section>
+        <h2>Add Transaction</h2>
+        <form onsubmit="addTransaction(event)">
+          <input type="date" name="date" required />
+          <input type="number" step="0.01" name="amount" placeholder="Amount (+ income / - expense)" required />
+
+          <select name="parent" id="parent" onchange="updateSubCategories(this.value)" required>
+            ${parentOptions}
+          </select>
+
+          <select name="sub" id="sub" required></select>
+
+          <input type="text" name="note" placeholder="Note / merchant" />
+          <button>Add</button>
+        </form>
+      </section>
+
+      <section>
+        <h2>This Month Transactions</h2>
+        ${txRows || `<p class="muted">No transactions this month yet.</p>`}
+      </section>
+    </main>
+  `;
+
+  updateSubCategories(document.getElementById("parent").value);
+}
+
 render();
-}
-
-function addTransaction(){
-transactions.push({
-id: Date.now(),
-date: document.getElementById("date").value,
-amount: parseFloat(document.getElementById("amount").value),
-account: document.getElementById("account").value,
-parent: document.getElementById("parent").value,
-sub: document.getElementById("sub").value,
-note: document.getElementById("note").value
-});
-save();
-}
-
-function deleteTx(id){
-transactions = transactions.filter(t=>t.id!==id);
-save();
-}
-
-function editTx(id){
-const t = transactions.find(t=>t.id===id);
-const newAmount = prompt("Edit amount", t.amount);
-if(newAmount!==null){
-t.amount = parseFloat(newAmount);
-save();
-}
-}
-
-function render(){
-
-const now = new Date();
-
-const monthTx = transactions.filter(t=>{
-const d = new Date(t.date);
-return d.getMonth()===now.getMonth();
-});
-
-const income = monthTx.filter(t=>t.amount>0).reduce((a,b)=>a+b.amount,0);
-const expenses = monthTx.filter(t=>t.amount<0 && t.type!=="transfer").reduce((a,b)=>a+Math.abs(b.amount),0);
-
-document.getElementById("summary").innerHTML = `
-<div class="card">
-Income: $${income.toFixed(2)}<br>
-Expenses: $${expenses.toFixed(2)}<br>
-<b>Surplus: $${(income-expenses).toFixed(2)}</b>
-</div>
-`;
-
-document.getElementById("transactions").innerHTML = monthTx.map(t=>`
-<div class="transaction">
-<div>${t.sub}<br><small>${t.note}</small></div>
-<div>
-$${t.amount}
-<br>
-<button onclick="editTx(${t.id})">✏️</button>
-<button onclick="deleteTx(${t.id})">🗑</button>
-</div>
-</div>
-`).join("");
-}
-
-function populateDropdowns(){
-const parentSelect = document.getElementById("parent");
-parentSelect.innerHTML = Object.keys(categoryModel).map(p=>`<option>${p}</option>`).join("");
-
-updateSub();
-
-parentSelect.onchange = updateSub;
-}
-
-function updateSub(){
-const parent = document.getElementById("parent").value;
-document.getElementById("sub").innerHTML = categoryModel[parent].map(s=>`<option>${s}</option>`).join("");
-}
-
-function importCSV(){
-document.getElementById("csvFile").click();
-}
-
-document.getElementById("csvFile").addEventListener("change", function(e){
-const file = e.target.files[0];
-const reader = new FileReader();
-
-reader.onload = function(evt){
-const rows = evt.target.result.split("\n");
-
-rows.slice(1).forEach(row=>{
-const cols = row.split(",");
-
-if(cols.length<3) return;
-
-const description = cols[1].toUpperCase();
-const amount = parseFloat(cols[2]);
-
-let parent="Needs Review";
-let sub="Needs Review";
-let type="expense";
-
-if(description.includes("TRANSFER")) type="transfer";
-if(description.includes("PAYMENT")) type="transfer";
-if(description.includes("SALARY")) type="income";
-
-if(description.includes("WOOLWORTHS") || description.includes("COLES")){
-parent="Living"; sub="Groceries";
-}
-if(description.includes("7-ELEVEN") || description.includes("BP")){
-parent="Transport"; sub="Petrol";
-}
-if(description.includes("NETFLIX")){
-parent="Subscriptions"; sub="Netflix";
-}
-
-if(type==="transfer") return;
-
-transactions.push({
-id: Date.now()+Math.random(),
-date: cols[0],
-amount: amount,
-parent,
-sub,
-note: cols[1]
-});
-});
-
-save();
-};
-
-reader.readAsText(file);
-});
-
-populateDropdowns();
-render();
-
 </script>
-
 </body>
 </html>
