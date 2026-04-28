@@ -1,22 +1,87 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#111827" />
-    <link rel="manifest" href="/manifest.webmanifest" />
-    <title>Goodman Finances Inc.</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script>
-document.getElementById('root').innerHTML = `
-  <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:24px;max-width:720px;margin:auto">
-    <h1>Goodman Finances Inc.</h1>
-    <p>Your app is live.</p>
-    <p>Next step: we’ll replace this placeholder with the working budget dashboard.</p>
-  </div>
-`;
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Goodman Finances Inc.</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div id="app"></div>
+
+<script>
+const app = document.getElementById('app');
+
+let transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+
+function save() {
+  localStorage.setItem('transactions', JSON.stringify(transactions));
+  render();
+}
+
+function addTransaction(e) {
+  e.preventDefault();
+  const form = e.target;
+
+  const transaction = {
+    date: form.date.value,
+    amount: parseFloat(form.amount.value),
+    category: form.category.value,
+    note: form.note.value
+  };
+
+  transactions.push(transaction);
+  save();
+  form.reset();
+}
+
+function getTotals() {
+  const income = transactions
+    .filter(t => t.amount > 0)
+    .reduce((a,b) => a + b.amount, 0);
+
+  const expenses = transactions
+    .filter(t => t.amount < 0)
+    .reduce((a,b) => a + b.amount, 0);
+
+  return { income, expenses, net: income + expenses };
+}
+
+function render() {
+  const totals = getTotals();
+
+  app.innerHTML = `
+    <div style="padding:20px;font-family:-apple-system;">
+      <h1>Goodman Finances Inc.</h1>
+
+      <h3>Summary</h3>
+      <p>Income: $${totals.income.toFixed(2)}</p>
+      <p>Expenses: $${totals.expenses.toFixed(2)}</p>
+      <p><strong>Net: $${totals.net.toFixed(2)}</strong></p>
+
+      <h3>Add Transaction</h3>
+      <form onsubmit="addTransaction(event)">
+        <input type="date" name="date" required /><br/><br/>
+        <input type="number" step="0.01" name="amount" placeholder="Amount (+ income / - expense)" required /><br/><br/>
+        <input type="text" name="category" placeholder="Category" required /><br/><br/>
+        <input type="text" name="note" placeholder="Note" /><br/><br/>
+        <button>Add</button>
+      </form>
+
+      <h3>Transactions</h3>
+      ${transactions.map(t => `
+        <div style="border-bottom:1px solid #ddd;padding:8px 0;">
+          ${t.date} — ${t.category} — $${t.amount} ${t.note ? `(${t.note})` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+render();
 </script>
-  </body>
+
+</body>
 </html>
