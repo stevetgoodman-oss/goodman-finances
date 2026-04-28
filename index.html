@@ -9,6 +9,14 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <script>
+document.getElementById('root').innerHTML = `
+  <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:24px;max-width:720px;margin:auto">
+    <h1>Goodman Finances Inc.</h1>
+    <p>Your app is live.</p>
+    <p>Next step: we’ll replace this placeholder with the working budget dashboard.</p>
+  </div>
+`;
+</script>
   </body>
 </html>
