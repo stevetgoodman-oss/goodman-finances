@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -466,11 +465,11 @@ input, select {
 const categoryModel = {
   "Mortgage": ["Home loan repayment"],
   "Household": ["AGL gas & electricity", "Water", "Rates", "Home insurance"],
-  "Transport": ["Petrol", "Car insurance", "Car rego"],
-  "Living": ["Groceries", "Chemist"],
-  "Lifestyle": ["Coffee", "Takeaway", "Steve Lou entertainment"],
+  "Transport": ["Petrol", "Car insurance", "Car rego", "Tolls", "MYKI"],
+  "Living": ["Groceries", "Chemist", "Home Maintenance"],
+  "Lifestyle": ["Coffee", "Takeaway", "Steve Lou entertainment", "Retail shopping", "Vanity"],
   "Kids": ["Kids swimming lessons", "Mila gymnastics", "Mila Acro", "Mila school fees", "Miscellaneous kids"],
-  "Subscriptions": ["Netflix", "Amazon", "Spotify", "Stronglifts 5x5 app", "Doordash app subscription", "Hayu", "Disney", "HBO", "Apple storage", "Google storage", "MCC membership"],
+  "Subscriptions": ["Netflix", "Amazon", "Spotify", "Stronglifts 5x5 app", "Doordash app subscription", "Hayu", "Disney", "HBO", "Apple storage", "Google storage", "MCC membership", "Chat GPT", "HBO & Simply Draw"],
   "Utilities / Personal": ["Phone and internet", "Gym"],
   "Buffer / Price Increases": ["General buffer", "Annual increases", "Unexpected bill movement"],
   "Needs Review": ["Needs Review", "ATM Withdrawal", "Unmapped Transaction"],
@@ -599,6 +598,12 @@ function transactionCountsForIncome(t) {
   return t.type === "income";
 }
 
+function expenseValue(t) {
+  // Purchases are usually negative. Refunds/returns are positive and should reduce actual spend.
+  if (t.amount < 0) return Math.abs(t.amount);
+  return -Math.abs(t.amount);
+}
+
 function getVisibleTransactions() {
   return transactions.filter(t => !t.hidden);
 }
@@ -630,7 +635,7 @@ function getThisMonthParentTotals() {
 
   getThisMonthTransactions().forEach(t => {
     if (transactionCountsForBudget(t) && totals[t.parent] !== undefined) {
-      totals[t.parent] += Math.abs(t.amount);
+      totals[t.parent] += expenseValue(t);
     }
   });
 
@@ -643,7 +648,7 @@ function getAccrualParentTotals() {
 
   getTransactionsSinceBudgetStart().forEach(t => {
     if (transactionCountsForBudget(t) && totals[t.parent] !== undefined) {
-      totals[t.parent] += Math.abs(t.amount);
+      totals[t.parent] += expenseValue(t);
     }
   });
 
@@ -660,7 +665,7 @@ function getSubTotals(parent, mode = "month") {
   txSource
     .filter(t => t.parent === parent && transactionCountsForBudget(t))
     .forEach(t => {
-      totals[t.sub] = (totals[t.sub] || 0) + Math.abs(t.amount);
+      totals[t.sub] = (totals[t.sub] || 0) + expenseValue(t);
     });
 
   return totals;
@@ -675,7 +680,7 @@ function getMonthlySummary() {
 
   const expenses = monthTx
     .filter(transactionCountsForBudget)
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    .reduce((sum, t) => sum + expenseValue(t), 0);
 
   return { income, expenses, surplus: income - expenses };
 }
@@ -866,65 +871,97 @@ function classifyTransaction(description, amount) {
     return { type: "needs_review", parent: "Needs Review", sub: "ATM Withdrawal", hidden: false };
   }
 
-  if (d.includes("HOME LOAN PYMT") || d.includes("MORTGAGE")) {
-    return { type: "expense", parent: "Mortgage", sub: "Home loan repayment", hidden: false };
-  }
-
-  if (
-    d.includes("PAYMENT RECEIVED") ||
-    d.includes("CREDIT CARD PAYMENT") ||
-    d.includes("TRANSFER TO") ||
-    d.includes("TRANSFER FROM") ||
-    d.includes("NETBANK")
-  ) {
-    return { type: "ignored", parent: "Ignored", sub: "Internal Transfer", hidden: true };
-  }
-
+  // Income
   if (
     d.includes("SALARY") ||
     d.includes("PAYROLL") ||
     d.includes("WAGES") ||
-    d.includes("TELSTRA CORPORAT")
+    d.includes("TELSTRA CORPORAT") ||
+    d.includes("EML PAYMENTS") ||
+    d.includes("DIR DEP EML")
   ) {
     return { type: "income", parent: "Income", sub: "Salary", hidden: false };
   }
 
+  // Known payments that look like transfers but are real expenses
+  if (d.includes("STARFISH SWIM")) {
+    return { type: "expense", parent: "Kids", sub: "Kids swimming lessons", hidden: false };
+  }
+
+  // Manual/adhoc incoming transfers should be reviewed, not hidden
+  if (d.includes("FAST TRANSFER FROM")) {
+    return { type: "needs_review", parent: "Needs Review", sub: "Needs Review", hidden: false };
+  }
+
+  // Internal movements and credit card repayments
+  if (
+    d.includes("PAYMENT RECEIVED") ||
+    d.includes("CREDIT CARD PAYMENT") ||
+    d.includes("TRANSFER TO XX") ||
+    d.includes("TRANSFER FROM XX") ||
+    d.includes("HOME LOAN TRANSFER")
+  ) {
+    return { type: "ignored", parent: "Ignored", sub: "Internal Transfer", hidden: true };
+  }
+
+  if (d.includes("HOME LOAN PYMT") || d.includes("MORTGAGE")) {
+    return { type: "expense", parent: "Mortgage", sub: "Home loan repayment", hidden: false };
+  }
+
+  if (d.includes("INTERNATIONAL TRANSACTION FEE") || d.includes("INTNL TRANSACTION FEE")) {
+    return { type: "expense", parent: "Buffer / Price Increases", sub: "General buffer", hidden: false };
+  }
+
   const rules = [
-    { keys: ["WAVERLEY GYMNASTICS"], parent: "Kids", sub: "Mila gymnastics" },
+    // Kids
     { keys: ["DANNY FRAWLEY"], parent: "Kids", sub: "Kids swimming lessons" },
-    { keys: ["REC XPRESS", "REC EXPRESS"], parent: "Utilities / Personal", sub: "Gym" },
+    { keys: ["WAVERLEY GYMNASTICS"], parent: "Kids", sub: "Mila gymnastics" },
+    { keys: ["THEATREDELEDANSE", "THEATRE DE LA DANSE", "PAYRIX*THEATREDELEDANSE"], parent: "Kids", sub: "Mila Acro" },
+    { keys: ["SPRIGGY SCHOOLS", "HEALTHLINK CREW"], parent: "Kids", sub: "Miscellaneous kids" },
 
-    { keys: ["WOOLWORTHS", "COLES", "ALDI", "IGA"], parent: "Living", sub: "Groceries" },
-    { keys: ["CHEMIST", "PHARMACY", "PRICELINE", "CWH"], parent: "Living", sub: "Chemist" },
+    // Mortgage and household
+    { keys: ["AGL SALES", "AGL"], parent: "Household", sub: "AGL gas & electricity" },
+    { keys: ["SOUTH EAST WATER"], parent: "Household", sub: "Water" },
+    { keys: ["GLEN EIRA RATES", "GLEN EIRA CTY COUNCIL"], parent: "Household", sub: "Rates" },
+    { keys: ["HOLLARDINS", "HOME INSURANCE"], parent: "Household", sub: "Home insurance" },
 
-    { keys: ["7-ELEVEN", "BP ", "SHELL", "AMPOL", "CALTEX", "UNITED PETROLEUM", "REDDY EXPRESS"], parent: "Transport", sub: "Petrol" },
+    // Living
+    { keys: ["BUNNINGS", "BUNNINGSSAUSAGESIZZLE"], parent: "Living", sub: "Home Maintenance" },
+    { keys: ["CHEMIST WAREHOUSE", "TERRYWHITE", "CHEMMART", "CWH", "CHEMIST", "PHARMACY", "PRICELINE"], parent: "Living", sub: "Chemist" },
+    { keys: ["DOORDASH ALDI"], parent: "Living", sub: "Groceries" },
+    { keys: ["WOOLWORTHS", "COLES", "ALDI", "IGA", "BAKERS DELIGHT", "ARTISANAL BAKEHOUS", "TOORADIN BAKERY", "MOLLY DENE BAKEHOUSE"], parent: "Living", sub: "Groceries" },
 
-    { keys: ["AGL"], parent: "Household", sub: "AGL gas & electricity" },
-    { keys: ["SOUTH EAST WATER", "YARRA VALLEY WATER"], parent: "Household", sub: "Water" },
-    { keys: ["COUNCIL", "RATES"], parent: "Household", sub: "Rates" },
+    // Lifestyle
+    { keys: ["LITTLE Z", "NEIGHBOURHOOD COFF"], parent: "Lifestyle", sub: "Coffee" },
+    { keys: ["DOORDASHDASHPA"], parent: "Subscriptions", sub: "Doordash app subscription" },
+    { keys: ["DOORDASH", "UBER EATS", "MENULOG", "MCDONALD", "KFC", "GRILLD", "PIZZA", "HUNKY DORY", "LITTLE BANH MI"], parent: "Lifestyle", sub: "Takeaway" },
+    { keys: ["BENTLEIGH RSL", "BWS LIQUOR", "CINEMA", "TICKETEK", "TICKETMASTER", "RESTAURANT", " BAR"], parent: "Lifestyle", sub: "Steve Lou entertainment" },
+    { keys: ["AMAZON AU RETAIL", "AMAZON AU MARKETPLACE", "AMAZON MKTPL", "CHADSTONE SHOPPIN", "KMART", "BIG W", "WONTHAGGI WORKMENS"], parent: "Lifestyle", sub: "Retail shopping" },
+    { keys: ["GLOW STUDIO", "MY TELEHEALTH CLINIC", "MY WEIGHT LOSS CLINIC"], parent: "Lifestyle", sub: "Vanity" },
 
-    { keys: ["NETFLIX"], parent: "Subscriptions", sub: "Netflix" },
+    // Transport
+    { keys: ["7-ELEVEN", "BP ", "BP CALDER", "BP MOORABBIN", "BP AA", "BP BAYSIDE", "SHELL", "AMPOL", "CALTEX", "UNITED BENTLEIGH", "UNITED PETROLEUM", "REDDY EXPRESS"], parent: "Transport", sub: "Petrol" },
+    { keys: ["VICROADS"], parent: "Transport", sub: "Car rego" },
+    { keys: ["LINKT"], parent: "Transport", sub: "Tolls" },
+    { keys: ["MYKI", "PUBLIC TRANSPORT VICTO"], parent: "Transport", sub: "MYKI" },
+
+    // Utilities / Personal
+    { keys: ["TELSTRA SERVICES", "OPTUS", "AUSSIE BROADBAND", "TPG", "NBN"], parent: "Utilities / Personal", sub: "Phone and internet" },
+    { keys: ["REC XPRESS", "REC EXPRESS", "COREPLUS", "ANYTIME FITNESS", "GENESIS", "FITNESS"], parent: "Utilities / Personal", sub: "Gym" },
+
+    // Subscriptions
     { keys: ["SPOTIFY"], parent: "Subscriptions", sub: "Spotify" },
-    { keys: ["APPLE"], parent: "Subscriptions", sub: "Apple storage" },
-    { keys: ["GOOGLE"], parent: "Subscriptions", sub: "Google storage" },
-    { keys: ["DISNEY"], parent: "Subscriptions", sub: "Disney" },
-    { keys: ["HAYU"], parent: "Subscriptions", sub: "Hayu" },
-    { keys: ["BINGE", "HBO", "MAX"], parent: "Subscriptions", sub: "HBO" },
-    { keys: ["DOORDASH PASS"], parent: "Subscriptions", sub: "Doordash app subscription" },
+    { keys: ["NETFLIX"], parent: "Subscriptions", sub: "Netflix" },
+    { keys: ["AMZNPRIME", "PRIME VIDE"], parent: "Subscriptions", sub: "Amazon" },
+    { keys: ["DISNEY PLUS"], parent: "Subscriptions", sub: "Disney" },
+    { keys: ["GOOGLE HAYU", "HAYU"], parent: "Subscriptions", sub: "Hayu" },
+    { keys: ["OPENAI", "CHATGPT"], parent: "Subscriptions", sub: "Chat GPT" },
     { keys: ["STRONGLIFTS"], parent: "Subscriptions", sub: "Stronglifts 5x5 app" },
     { keys: ["MCC"], parent: "Subscriptions", sub: "MCC membership" },
-
-    { keys: ["TELSTRA", "OPTUS", "AUSSIE BROADBAND", "TPG", "NBN"], parent: "Utilities / Personal", sub: "Phone and internet" },
-    { keys: ["ANYTIME FITNESS", "GENESIS", "FITNESS"], parent: "Utilities / Personal", sub: "Gym" },
-
-    { keys: ["SWIM", "SWIMMING"], parent: "Kids", sub: "Kids swimming lessons" },
-    { keys: ["GYMNASTICS"], parent: "Kids", sub: "Mila gymnastics" },
-    { keys: ["ACRO"], parent: "Kids", sub: "Mila Acro" },
-    { keys: ["SCHOOL"], parent: "Kids", sub: "Mila school fees" },
-
-    { keys: ["CAFE", "COFFEE", "BAKERS DELIGHT"], parent: "Lifestyle", sub: "Coffee" },
-    { keys: ["UBER EATS", "DOORDASH", "MENULOG", "MCDONALD", "KFC", "GRILLD", "PIZZA"], parent: "Lifestyle", sub: "Takeaway" },
-    { keys: ["RSL", "BWS", "CINEMA", "TICKETEK", "TICKETMASTER", "RESTAURANT", "BAR"], parent: "Lifestyle", sub: "Steve Lou entertainment" }
+    { keys: ["APPLE.COM/BILL MN412JXL", "APPLE.COM/BILL MN411GV", "APPLE.COM/BILL SYDNEY NS"], parent: "Subscriptions", sub: "HBO & Simply Draw" },
+    { keys: ["APPLE.COM/BILL", "APPLE APPLE.COM/BILL"], parent: "Subscriptions", sub: "Apple storage" },
+    { keys: ["GOOGLE STORAGE"], parent: "Subscriptions", sub: "Google storage" },
+    { keys: ["BINGE", "HBO", "MAX"], parent: "Subscriptions", sub: "HBO" }
   ];
 
   for (const rule of rules) {
@@ -939,7 +976,6 @@ function classifyTransaction(description, amount) {
 
   return { type: "needs_review", parent: "Needs Review", sub: "Unmapped Transaction", hidden: false };
 }
-
 function makeFingerprint(tx) {
   return [tx.date, Number(tx.amount).toFixed(2), normaliseText(tx.note)].join("|");
 }
