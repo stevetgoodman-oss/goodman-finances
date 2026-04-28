@@ -441,6 +441,46 @@ input, select {
   margin-top: 6px;
 }
 
+.edit-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 14px;
+}
+
+.edit-sheet {
+  width: 100%;
+  max-width: 720px;
+  background: white;
+  border-radius: 24px;
+  padding: 18px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.28);
+}
+
+.edit-sheet h2 {
+  margin: 0 0 10px;
+  color: var(--navy);
+}
+
+.edit-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+button.secondary {
+  background: #E2E8F0;
+  color: var(--navy);
+  width: 100%;
+  margin-top: 8px;
+  padding: 12px;
+}
+
 .muted {
   color: var(--muted);
   font-size: 13px;
@@ -494,6 +534,7 @@ const budgetStartDate = "2026-05-01";
 
 let activeTab = "dashboard";
 let viewMode = "monthly";
+let editingId = null;
 let transactions = JSON.parse(localStorage.getItem("transactions") || "[]");
 
 function save() {
@@ -790,39 +831,98 @@ function deleteTransaction(id) {
 }
 
 function editTransaction(id) {
-  const t = transactions.find(t => t.id === id);
+  editingId = id;
+  render();
+}
+
+function cancelEdit() {
+  editingId = null;
+  render();
+}
+
+function updateEditSubCategories(parentValue) {
+  const subSelect = document.getElementById("editSub");
+  if (!subSelect) return;
+
+  subSelect.innerHTML = categoryModel[parentValue]
+    .map(sub => `<option value="${sub}">${sub}</option>`)
+    .join("");
+}
+
+function saveEditedTransaction(e) {
+  e.preventDefault();
+
+  const t = transactions.find(tx => tx.id === editingId);
   if (!t) return;
 
-  const newAmount = prompt("Amount", t.amount);
-  if (newAmount === null) return;
+  const form = e.target;
+  const parent = form.parent.value;
+  const amount = parseFloat(form.amount.value);
 
-  const newParent = prompt("Parent category", t.parent);
-  if (newParent === null) return;
-
-  const validParent = categoryModel[newParent] ? newParent : "Needs Review";
-  const validSubs = categoryModel[validParent];
-
-  const newSub = prompt("Sub-category", t.sub);
-  if (newSub === null) return;
-
-  const newNote = prompt("Note / merchant", t.note || "");
-  if (newNote === null) return;
-
-  t.amount = parseFloat(newAmount);
-  t.parent = validParent;
-  t.sub = validSubs.includes(newSub) ? newSub : validSubs[0];
-  t.note = newNote;
+  t.amount = amount;
+  t.date = form.date.value;
+  t.parent = parent;
+  t.sub = form.sub.value;
+  t.note = form.note.value;
   t.hidden = false;
 
-  if (t.parent === "Income") {
+  if (parent === "Income") {
     t.type = "income";
-  } else if (t.parent === "Needs Review") {
+  } else if (parent === "Needs Review") {
     t.type = "needs_review";
+  } else if (parent === "Exclude") {
+    t.type = "ignored";
+    t.hidden = true;
   } else {
     t.type = "expense";
   }
 
+  editingId = null;
   save();
+}
+
+function renderEditModal() {
+  if (editingId === null) return "";
+
+  const t = transactions.find(tx => tx.id === editingId);
+  if (!t) return "";
+
+  const parentOptions = Object.keys(categoryModel)
+    .map(parent => `<option value="${parent}" ${parent === t.parent ? "selected" : ""}>${parent}</option>`)
+    .join("");
+
+  const subOptions = (categoryModel[t.parent] || categoryModel["Needs Review"])
+    .map(sub => `<option value="${sub}" ${sub === t.sub ? "selected" : ""}>${sub}</option>`)
+    .join("");
+
+  return `
+    <div class="edit-overlay">
+      <div class="edit-sheet">
+        <h2>Edit Transaction</h2>
+        <p class="muted">${t.note || "No merchant / note"}</p>
+
+        <form onsubmit="saveEditedTransaction(event)">
+          <input type="date" name="date" value="${t.date}" required />
+          <input type="number" step="0.01" name="amount" value="${t.amount}" required />
+
+          <select name="parent" id="editParent" onchange="updateEditSubCategories(this.value)" required>
+            ${parentOptions}
+          </select>
+
+          <select name="sub" id="editSub" required>
+            ${subOptions}
+          </select>
+
+          <input type="text" name="note" value="${String(t.note || "").replace(/"/g, "&quot;")}" placeholder="Note / merchant" />
+
+          <div class="edit-actions">
+            <button type="button" class="secondary" onclick="cancelEdit()">Cancel</button>
+            <button type="submit" class="primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
 }
 
 function parseCSV(text) {
@@ -1303,6 +1403,8 @@ function renderTransactionHistory() {
     </div>
     <p class="muted">Hidden transfers and credit card repayments do not appear here.</p>
     ${renderList(allTransactions)}
+
+    ${renderEditModal()}
   `;
 }
 
