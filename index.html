@@ -49,11 +49,17 @@ const categoryModel = {
     "Disney",
     "HBO",
     "Apple storage",
-    "Google storage"
+    "Google storage",
+    "MCC membership"
   ],
   "Utilities / Personal": [
     "Phone and internet",
     "Gym"
+  ],
+  "Buffer / Price Increases": [
+    "General buffer",
+    "Annual increases",
+    "Unexpected bill movement"
   ],
   "Income": [
     "Salary",
@@ -68,15 +74,19 @@ const categoryModel = {
 };
 
 const budgets = {
-  "Household": 0,
-  "Transport": 0,
-  "Living": 0,
-  "Lifestyle": 0,
-  "Kids": 0,
-  "Subscriptions": 0,
-  "Utilities / Personal": 0,
+  "Household": 891,
+  "Transport": 371,
+  "Living": 1275,
+  "Lifestyle": 1133,
+  "Kids": 635,
+  "Subscriptions": 91,
+  "Utilities / Personal": 279,
+  "Buffer / Price Increases": 150,
   "Investing / Savings": 0
 };
+
+// Clean budget start date
+const budgetStartDate = "2026-05-01";
 
 let transactions = JSON.parse(localStorage.getItem("transactions") || "[]");
 
@@ -85,10 +95,26 @@ function save() {
   render();
 }
 
+function dollars(value) {
+  return "$" + Number(value).toFixed(2);
+}
+
 function isThisMonth(dateString) {
   const d = new Date(dateString);
   const now = new Date();
   return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+}
+
+function monthsElapsedSinceBudgetStart() {
+  const start = new Date(budgetStartDate);
+  const now = new Date();
+
+  const months =
+    (now.getFullYear() - start.getFullYear()) * 12 +
+    (now.getMonth() - start.getMonth()) +
+    1;
+
+  return Math.max(months, 1);
 }
 
 function addTransaction(e) {
@@ -116,7 +142,12 @@ function getThisMonthTransactions() {
   return transactions.filter(t => isThisMonth(t.date));
 }
 
-function getParentTotals() {
+function getTransactionsSinceBudgetStart() {
+  const start = new Date(budgetStartDate);
+  return transactions.filter(t => new Date(t.date) >= start);
+}
+
+function getThisMonthParentTotals() {
   const totals = {};
   Object.keys(budgets).forEach(cat => totals[cat] = 0);
 
@@ -129,10 +160,26 @@ function getParentTotals() {
   return totals;
 }
 
-function getSubTotals(parent) {
+function getAccrualParentTotals() {
   const totals = {};
+  Object.keys(budgets).forEach(cat => totals[cat] = 0);
 
-  getThisMonthTransactions()
+  getTransactionsSinceBudgetStart().forEach(t => {
+    if (t.amount < 0 && totals[t.parent] !== undefined) {
+      totals[t.parent] += Math.abs(t.amount);
+    }
+  });
+
+  return totals;
+}
+
+function getSubTotals(parent, mode = "month") {
+  const totals = {};
+  const txSource = mode === "accrual"
+    ? getTransactionsSinceBudgetStart()
+    : getThisMonthTransactions();
+
+  txSource
     .filter(t => t.parent === parent && t.amount < 0)
     .forEach(t => {
       totals[t.sub] = (totals[t.sub] || 0) + Math.abs(t.amount);
@@ -141,7 +188,7 @@ function getSubTotals(parent) {
   return totals;
 }
 
-function getSummary() {
+function getMonthlySummary() {
   const monthTx = getThisMonthTransactions();
 
   const income = monthTx
@@ -159,26 +206,54 @@ function getSummary() {
   };
 }
 
+function getAccrualSummary() {
+  const monthsElapsed = monthsElapsedSinceBudgetStart();
+  const accrualTotals = getAccrualParentTotals();
+
+  let totalBudgetAccrued = 0;
+  let totalActualSpent = 0;
+
+  Object.keys(budgets).forEach(parent => {
+    totalBudgetAccrued += budgets[parent] * monthsElapsed;
+    totalActualSpent += accrualTotals[parent] || 0;
+  });
+
+  return {
+    monthsElapsed,
+    totalBudgetAccrued,
+    totalActualSpent,
+    balance: totalBudgetAccrued - totalActualSpent
+  };
+}
+
 function updateSubCategories(parentValue) {
   const subSelect = document.getElementById("sub");
+  if (!subSelect) return;
+
   subSelect.innerHTML = categoryModel[parentValue]
     .map(sub => `<option value="${sub}">${sub}</option>`)
     .join("");
 }
 
 function render() {
-  const summary = getSummary();
-  const parentTotals = getParentTotals();
+  const monthlySummary = getMonthlySummary();
+  const accrualSummary = getAccrualSummary();
+
+  const monthlyParentTotals = getThisMonthParentTotals();
+  const accrualParentTotals = getAccrualParentTotals();
+
+  const monthsElapsed = monthsElapsedSinceBudgetStart();
 
   const parentOptions = Object.keys(categoryModel)
     .map(parent => `<option value="${parent}">${parent}</option>`)
     .join("");
 
-  const budgetRows = Object.keys(budgets).map(parent => {
-    const budget = budgets[parent];
-    const actual = parentTotals[parent] || 0;
-    const variance = budget - actual;
-    const subTotals = getSubTotals(parent);
+  const accrualRows = Object.keys(budgets).map(parent => {
+    const monthlyBudget = budgets[parent];
+    const accrued = monthlyBudget * monthsElapsed;
+    const actual = accrualParentTotals[parent] || 0;
+    const balance = accrued - actual;
+    const subTotals = getSubTotals(parent, "accrual");
 
     const subBreakdown = Object.keys(subTotals).length
       ? Object.entries(subTotals)
@@ -186,24 +261,62 @@ function render() {
           .map(([sub, amount]) => `
             <div class="sub-row">
               <span>${sub}</span>
-              <strong>$${amount.toFixed(2)}</strong>
+              <strong>${dollars(amount)}</strong>
             </div>
           `).join("")
-      : `<div class="empty">No spend yet</div>`;
+      : `<div class="empty">No spend since budget start</div>`;
 
     return `
       <details class="card">
         <summary>
           <div>
             <strong>${parent}</strong>
-            <div class="muted">$${actual.toFixed(2)} spent</div>
+            <div class="muted">Accrued ${dollars(accrued)} · Spent ${dollars(actual)}</div>
           </div>
-          <div class="${variance >= 0 ? "good" : "bad"}">
-            ${variance >= 0 ? "$" + variance.toFixed(2) + " left" : "$" + Math.abs(variance).toFixed(2) + " over"}
+          <div class="${balance >= 0 ? "good" : "bad"}">
+            ${balance >= 0 ? dollars(balance) + " ahead" : dollars(Math.abs(balance)) + " behind"}
           </div>
         </summary>
         <div class="budget-line">
-          Budget: $${budget.toFixed(2)} · Actual: $${actual.toFixed(2)}
+          Monthly accrual: ${dollars(monthlyBudget)} · Months elapsed: ${monthsElapsed}
+        </div>
+        <div class="sub-breakdown">
+          ${subBreakdown}
+        </div>
+      </details>
+    `;
+  }).join("");
+
+  const monthlyRows = Object.keys(budgets).map(parent => {
+    const budget = budgets[parent];
+    const actual = monthlyParentTotals[parent] || 0;
+    const variance = budget - actual;
+    const subTotals = getSubTotals(parent, "month");
+
+    const subBreakdown = Object.keys(subTotals).length
+      ? Object.entries(subTotals)
+          .sort((a, b) => b[1] - a[1])
+          .map(([sub, amount]) => `
+            <div class="sub-row">
+              <span>${sub}</span>
+              <strong>${dollars(amount)}</strong>
+            </div>
+          `).join("")
+      : `<div class="empty">No spend this month</div>`;
+
+    return `
+      <details class="card">
+        <summary>
+          <div>
+            <strong>${parent}</strong>
+            <div class="muted">${dollars(actual)} spent this month</div>
+          </div>
+          <div class="${variance >= 0 ? "good" : "bad"}">
+            ${variance >= 0 ? dollars(variance) + " left" : dollars(Math.abs(variance)) + " over"}
+          </div>
+        </summary>
+        <div class="budget-line">
+          Monthly budget: ${dollars(budget)} · Actual: ${dollars(actual)}
         </div>
         <div class="sub-breakdown">
           ${subBreakdown}
@@ -222,7 +335,7 @@ function render() {
           <div class="muted">${t.parent} · ${t.date}${t.note ? " · " + t.note : ""}</div>
         </div>
         <div>
-          <strong>${t.amount < 0 ? "-" : "+"}$${Math.abs(t.amount).toFixed(2)}</strong>
+          <strong>${t.amount < 0 ? "-" : "+"}${dollars(Math.abs(t.amount))}</strong>
           <button onclick="deleteTransaction(${t.id})">Delete</button>
         </div>
       </div>
@@ -233,24 +346,49 @@ function render() {
       <h1>Goodman Finances Inc.</h1>
 
       <section class="summary">
-        <h2>This Month</h2>
+        <h2>This Month Cash View</h2>
         <div class="metric">
           <span>Income</span>
-          <strong>$${summary.income.toFixed(2)}</strong>
+          <strong>${dollars(monthlySummary.income)}</strong>
         </div>
         <div class="metric">
           <span>Expenses</span>
-          <strong>$${summary.expenses.toFixed(2)}</strong>
+          <strong>${dollars(monthlySummary.expenses)}</strong>
         </div>
         <div class="metric total">
-          <span>Surplus remaining</span>
-          <strong>$${summary.surplus.toFixed(2)}</strong>
+          <span>Cash surplus this month</span>
+          <strong>${dollars(monthlySummary.surplus)}</strong>
+        </div>
+      </section>
+
+      <section class="summary">
+        <h2>Category Balance</h2>
+        <p class="muted">Accrual view from ${budgetStartDate}. This smooths annual, quarterly and uneven bills.</p>
+        <div class="metric">
+          <span>Budget accrued</span>
+          <strong>${dollars(accrualSummary.totalBudgetAccrued)}</strong>
+        </div>
+        <div class="metric">
+          <span>Actual spent</span>
+          <strong>${dollars(accrualSummary.totalActualSpent)}</strong>
+        </div>
+        <div class="metric total">
+          <span>Overall balance</span>
+          <strong class="${accrualSummary.balance >= 0 ? "good" : "bad"}">
+            ${accrualSummary.balance >= 0 ? dollars(accrualSummary.balance) + " ahead" : dollars(Math.abs(accrualSummary.balance)) + " behind"}
+          </strong>
         </div>
       </section>
 
       <section>
-        <h2>Budget vs Actual</h2>
-        ${budgetRows}
+        <h2>Accrual Balance by Category</h2>
+        ${accrualRows}
+      </section>
+
+      <section>
+        <h2>This Month vs Budget</h2>
+        <p class="muted">Useful for cash awareness, but lumpy bills should be judged using Category Balance above.</p>
+        ${monthlyRows}
       </section>
 
       <section>
@@ -271,7 +409,7 @@ function render() {
       </section>
 
       <section>
-        <h2>Transactions</h2>
+        <h2>This Month Transactions</h2>
         ${txRows || `<p class="muted">No transactions this month yet.</p>`}
       </section>
     </main>
