@@ -1,17 +1,172 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Goodman Finances Inc.</title>
-  <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css" />
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Goodman Finances Inc.</title>
+
+<style>
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f4f4f5;
+  color: #111827;
+}
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+  padding-bottom: 80px;
+}
+
+h1 { font-size: 28px; margin: 8px 0 16px; }
+h2 { font-size: 20px; margin: 20px 0 10px; }
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.tabs button {
+  flex: 1;
+  border: 0;
+  border-radius: 999px;
+  padding: 12px;
+  font-weight: 700;
+  background: #e5e7eb;
+}
+
+.tabs button.active {
+  background: #111827;
+  color: white;
+}
+
+.summary, .card, .panel {
+  background: white;
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+
+.metric {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.metric:last-child { border-bottom: 0; }
+
+.metric.total {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.muted {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.good { color: #047857; }
+.bad { color: #dc2626; }
+
+details summary {
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  cursor: pointer;
+}
+
+details summary::-webkit-details-marker { display: none; }
+
+.budget-line {
+  color: #6b7280;
+  font-size: 13px;
+  margin: 10px 0;
+}
+
+.sub-row {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid #f1f1f1;
+  padding: 8px 0;
+}
+
+.transaction {
+  background: white;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.transaction-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+
+button, input, select {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #e5e7eb;
+}
+
+button.primary {
+  background: #111827;
+  color: white;
+  width: 100%;
+  margin-top: 8px;
+}
+
+input, select {
+  width: 100%;
+  padding: 11px;
+  margin: 6px 0;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  box-sizing: border-box;
+  background: white;
+}
+
+.empty {
+  color: #9ca3af;
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+.pill {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #fef3c7;
+  color: #92400e;
+}
+</style>
 </head>
+
 <body>
 <div id="app"></div>
 
 <script>
 const categoryModel = {
+  "Mortgage": ["Home loan repayment"],
   "Household": ["AGL gas & electricity", "Water", "Rates", "Home insurance"],
   "Transport": ["Petrol", "Car insurance", "Car rego"],
   "Living": ["Groceries", "Chemist"],
@@ -26,6 +181,7 @@ const categoryModel = {
 };
 
 const budgets = {
+  "Mortgage": 6600,
   "Household": 891,
   "Transport": 371,
   "Living": 1275,
@@ -39,6 +195,7 @@ const budgets = {
 
 const budgetStartDate = "2026-05-01";
 
+let activeTab = "dashboard";
 let transactions = JSON.parse(localStorage.getItem("transactions") || "[]");
 
 function save() {
@@ -64,28 +221,43 @@ function parseDate(value) {
   if (parts.length === 3) {
     let [d, m, y] = parts;
     if (y.length === 2) y = "20" + y;
-    return `${y.padStart(4,"0")}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
+    return `${y.padStart(4, "0")}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
   }
 
   return raw;
 }
 
+function isOnOrAfterBudgetStart(dateString) {
+  return new Date(dateString) >= new Date(budgetStartDate);
+}
+
 function isThisMonth(dateString) {
   const d = new Date(dateString);
   const now = new Date();
-  return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+
+  return (
+    d.getMonth() === now.getMonth() &&
+    d.getFullYear() === now.getFullYear() &&
+    isOnOrAfterBudgetStart(dateString)
+  );
 }
 
 function monthsElapsedSinceBudgetStart() {
   const start = new Date(budgetStartDate);
   const now = new Date();
 
-  const months =
+  if (now < start) return 0;
+
+  return (
     (now.getFullYear() - start.getFullYear()) * 12 +
     (now.getMonth() - start.getMonth()) +
-    1;
+    1
+  );
+}
 
-  return Math.max(months, 1);
+function setTab(tab) {
+  activeTab = tab;
+  render();
 }
 
 function transactionCountsForBudget(t) {
@@ -94,67 +266,6 @@ function transactionCountsForBudget(t) {
 
 function transactionCountsForIncome(t) {
   return t.type === "income";
-}
-
-function addTransaction(e) {
-  e.preventDefault();
-  const form = e.target;
-  const amount = parseFloat(form.amount.value);
-
-  transactions.push({
-    id: Date.now(),
-    date: form.date.value,
-    amount,
-    type: amount >= 0 ? "income" : "expense",
-    parent: form.parent.value,
-    sub: form.sub.value,
-    note: form.note.value,
-    hidden: false,
-    imported: false
-  });
-
-  save();
-}
-
-function deleteTransaction(id) {
-  transactions = transactions.filter(t => t.id !== id);
-  save();
-}
-
-function editTransaction(id) {
-  const t = transactions.find(t => t.id === id);
-  if (!t) return;
-
-  const newAmount = prompt("Amount", t.amount);
-  if (newAmount === null) return;
-
-  const newParent = prompt("Parent category", t.parent);
-  if (newParent === null) return;
-
-  const validSubs = categoryModel[newParent] || categoryModel["Needs Review"];
-  const newSub = prompt("Sub-category", t.sub);
-  if (newSub === null) return;
-
-  const newNote = prompt("Note / merchant", t.note || "");
-  if (newNote === null) return;
-
-  t.amount = parseFloat(newAmount);
-  t.parent = categoryModel[newParent] ? newParent : "Needs Review";
-  t.sub = validSubs.includes(newSub) ? newSub : "Needs Review";
-  t.note = newNote;
-
-  if (t.parent === "Needs Review") {
-    t.type = "needs_review";
-    t.hidden = false;
-  } else if (t.amount >= 0 && t.parent === "Income") {
-    t.type = "income";
-    t.hidden = false;
-  } else {
-    t.type = "expense";
-    t.hidden = false;
-  }
-
-  save();
 }
 
 function getVisibleTransactions() {
@@ -166,8 +277,20 @@ function getThisMonthTransactions() {
 }
 
 function getTransactionsSinceBudgetStart() {
-  const start = new Date(budgetStartDate);
-  return getVisibleTransactions().filter(t => new Date(t.date) >= start);
+  return getVisibleTransactions().filter(t => isOnOrAfterBudgetStart(t.date));
+}
+
+function getAllVisibleTransactions() {
+  return getVisibleTransactions()
+    .slice()
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+
+function getNeedsReviewTransactions() {
+  return getVisibleTransactions()
+    .filter(t => t.type === "needs_review")
+    .slice()
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
 function getThisMonthParentTotals() {
@@ -198,9 +321,10 @@ function getAccrualParentTotals() {
 
 function getSubTotals(parent, mode = "month") {
   const totals = {};
-  const txSource = mode === "accrual"
-    ? getTransactionsSinceBudgetStart()
-    : getThisMonthTransactions();
+  const txSource =
+    mode === "accrual"
+      ? getTransactionsSinceBudgetStart()
+      : getThisMonthTransactions();
 
   txSource
     .filter(t => t.parent === parent && transactionCountsForBudget(t))
@@ -254,6 +378,73 @@ function updateSubCategories(parentValue) {
     .join("");
 }
 
+function addTransaction(e) {
+  e.preventDefault();
+
+  const form = e.target;
+  const amount = parseFloat(form.amount.value);
+  const parent = form.parent.value;
+
+  let type = "expense";
+  if (parent === "Income") type = "income";
+  if (parent === "Needs Review") type = "needs_review";
+
+  transactions.push({
+    id: Date.now(),
+    date: form.date.value,
+    amount,
+    type,
+    parent,
+    sub: form.sub.value,
+    note: form.note.value,
+    hidden: false,
+    imported: false
+  });
+
+  save();
+}
+
+function deleteTransaction(id) {
+  transactions = transactions.filter(t => t.id !== id);
+  save();
+}
+
+function editTransaction(id) {
+  const t = transactions.find(t => t.id === id);
+  if (!t) return;
+
+  const newAmount = prompt("Amount", t.amount);
+  if (newAmount === null) return;
+
+  const newParent = prompt("Parent category", t.parent);
+  if (newParent === null) return;
+
+  const validParent = categoryModel[newParent] ? newParent : "Needs Review";
+  const validSubs = categoryModel[validParent];
+
+  const newSub = prompt("Sub-category", t.sub);
+  if (newSub === null) return;
+
+  const newNote = prompt("Note / merchant", t.note || "");
+  if (newNote === null) return;
+
+  t.amount = parseFloat(newAmount);
+  t.parent = validParent;
+  t.sub = validSubs.includes(newSub) ? newSub : validSubs[0];
+  t.note = newNote;
+  t.hidden = false;
+
+  if (t.parent === "Income") {
+    t.type = "income";
+  } else if (t.parent === "Needs Review") {
+    t.type = "needs_review";
+  } else {
+    t.type = "expense";
+  }
+
+  save();
+}
+
 function parseCSV(text) {
   const rows = [];
   let current = "";
@@ -296,18 +487,20 @@ function parseCSV(text) {
 function classifyTransaction(description, amount) {
   const d = normaliseText(description);
 
-  if (d.includes("ATM") || d.includes("CASH WITHDRAWAL") || d.includes("WITHDRAWAL")) {
+  if (d.includes("ATM") || d.includes("CASH WITHDRAWAL")) {
     return { type: "needs_review", parent: "Needs Review", sub: "ATM Withdrawal", hidden: false };
   }
 
+  if (d.includes("HOME LOAN PYMT") || d.includes("MORTGAGE")) {
+    return { type: "expense", parent: "Mortgage", sub: "Home loan repayment", hidden: false };
+  }
+
   if (
-    d.includes("TRANSFER") ||
-    d.includes("TFR") ||
-    d.includes("NETBANK") ||
     d.includes("PAYMENT RECEIVED") ||
     d.includes("CREDIT CARD PAYMENT") ||
-    d.includes("BPAY TO") ||
-    d.includes("DIRECT CREDIT")
+    d.includes("TRANSFER TO") ||
+    d.includes("TRANSFER FROM") ||
+    d.includes("NETBANK")
   ) {
     return { type: "ignored", parent: "Ignored", sub: "Internal Transfer", hidden: true };
   }
@@ -315,22 +508,25 @@ function classifyTransaction(description, amount) {
   if (
     d.includes("SALARY") ||
     d.includes("PAYROLL") ||
-    d.includes("WAGES")
+    d.includes("WAGES") ||
+    d.includes("TELSTRA CORPORAT")
   ) {
     return { type: "income", parent: "Income", sub: "Salary", hidden: false };
   }
 
   const rules = [
-    { keys: ["WOOLWORTHS", "COLES", "ALDI", "IGA"], parent: "Living", sub: "Groceries" },
-    { keys: ["CHEMIST", "PHARMACY", "PRICELINE"], parent: "Living", sub: "Chemist" },
+    { keys: ["WAVERLEY GYMNASTICS"], parent: "Kids", sub: "Mila gymnastics" },
+    { keys: ["DANNY FRAWLEY"], parent: "Kids", sub: "Kids swimming lessons" },
+    { keys: ["REC XPRESS", "REC EXPRESS"], parent: "Utilities / Personal", sub: "Gym" },
 
-    { keys: ["7-ELEVEN", "BP ", "SHELL", "AMPOL", "CALTEX", "UNITED PETROLEUM"], parent: "Transport", sub: "Petrol" },
-    { keys: ["VICROADS", "REGISTRATION"], parent: "Transport", sub: "Car rego" },
+    { keys: ["WOOLWORTHS", "COLES", "ALDI", "IGA"], parent: "Living", sub: "Groceries" },
+    { keys: ["CHEMIST", "PHARMACY", "PRICELINE", "CWH"], parent: "Living", sub: "Chemist" },
+
+    { keys: ["7-ELEVEN", "BP ", "SHELL", "AMPOL", "CALTEX", "UNITED PETROLEUM", "REDDY EXPRESS"], parent: "Transport", sub: "Petrol" },
 
     { keys: ["AGL"], parent: "Household", sub: "AGL gas & electricity" },
     { keys: ["SOUTH EAST WATER", "YARRA VALLEY WATER"], parent: "Household", sub: "Water" },
     { keys: ["COUNCIL", "RATES"], parent: "Household", sub: "Rates" },
-    { keys: ["INSURANCE"], parent: "Household", sub: "Home insurance" },
 
     { keys: ["NETFLIX"], parent: "Subscriptions", sub: "Netflix" },
     { keys: ["SPOTIFY"], parent: "Subscriptions", sub: "Spotify" },
@@ -344,16 +540,16 @@ function classifyTransaction(description, amount) {
     { keys: ["MCC"], parent: "Subscriptions", sub: "MCC membership" },
 
     { keys: ["TELSTRA", "OPTUS", "AUSSIE BROADBAND", "TPG", "NBN"], parent: "Utilities / Personal", sub: "Phone and internet" },
-    { keys: ["GYM", "ANYTIME FITNESS", "GENESIS", "FITNESS"], parent: "Utilities / Personal", sub: "Gym" },
+    { keys: ["ANYTIME FITNESS", "GENESIS", "FITNESS"], parent: "Utilities / Personal", sub: "Gym" },
 
     { keys: ["SWIM", "SWIMMING"], parent: "Kids", sub: "Kids swimming lessons" },
     { keys: ["GYMNASTICS"], parent: "Kids", sub: "Mila gymnastics" },
     { keys: ["ACRO"], parent: "Kids", sub: "Mila Acro" },
     { keys: ["SCHOOL"], parent: "Kids", sub: "Mila school fees" },
 
-    { keys: ["CAFE", "COFFEE"], parent: "Lifestyle", sub: "Coffee" },
+    { keys: ["CAFE", "COFFEE", "BAKERS DELIGHT"], parent: "Lifestyle", sub: "Coffee" },
     { keys: ["UBER EATS", "DOORDASH", "MENULOG", "MCDONALD", "KFC", "GRILLD", "PIZZA"], parent: "Lifestyle", sub: "Takeaway" },
-    { keys: ["CINEMA", "TICKETEK", "TICKETMASTER", "RESTAURANT", "BAR"], parent: "Lifestyle", sub: "Steve Lou entertainment" }
+    { keys: ["RSL", "BWS", "CINEMA", "TICKETEK", "TICKETMASTER", "RESTAURANT", "BAR"], parent: "Lifestyle", sub: "Steve Lou entertainment" }
   ];
 
   for (const rule of rules) {
@@ -370,19 +566,17 @@ function classifyTransaction(description, amount) {
 }
 
 function makeFingerprint(tx) {
-  return [
-    tx.date,
-    Number(tx.amount).toFixed(2),
-    normaliseText(tx.note)
-  ].join("|");
+  return [tx.date, Number(tx.amount).toFixed(2), normaliseText(tx.note)].join("|");
 }
 
 function findColumn(headers, candidates) {
   const normalised = headers.map(h => normaliseText(h));
+
   for (const candidate of candidates) {
     const index = normalised.findIndex(h => h.includes(candidate));
     if (index !== -1) return index;
   }
+
   return -1;
 }
 
@@ -391,6 +585,7 @@ function importCSVFile(file) {
 
   reader.onload = function(evt) {
     const rows = parseCSV(evt.target.result).filter(r => r.length > 1);
+
     if (rows.length < 2) {
       alert("No transactions found.");
       return;
@@ -408,8 +603,11 @@ function importCSVFile(file) {
     }
 
     const existing = new Set(transactions.map(makeFingerprint));
+
     let imported = 0;
     let skipped = 0;
+    let ignored = 0;
+    let needsReview = 0;
 
     rows.slice(1).forEach(row => {
       const date = parseDate(row[dateIndex]);
@@ -442,10 +640,14 @@ function importCSVFile(file) {
       existing.add(fingerprint);
       transactions.push(tx);
       imported++;
+
+      if (tx.hidden) ignored++;
+      if (tx.type === "needs_review") needsReview++;
     });
 
     save();
-    alert(`Import complete. Imported ${imported}. Skipped duplicates ${skipped}.`);
+
+    alert(`Import complete. Imported ${imported}. Skipped duplicates ${skipped}. Hidden transfers ${ignored}. Needs review ${needsReview}.`);
   };
 
   reader.readAsText(file);
@@ -457,18 +659,12 @@ function handleCSVUpload(e) {
   e.target.value = "";
 }
 
-function render() {
+function renderDashboard() {
   const monthlySummary = getMonthlySummary();
   const accrualSummary = getAccrualSummary();
   const monthlyParentTotals = getThisMonthParentTotals();
   const accrualParentTotals = getAccrualParentTotals();
   const monthsElapsed = monthsElapsedSinceBudgetStart();
-
-  const parentOptions = Object.keys(categoryModel)
-    .map(parent => `<option value="${parent}">${parent}</option>`)
-    .join("");
-
-  const needsReviewCount = getVisibleTransactions().filter(t => t.type === "needs_review").length;
 
   const accrualRows = Object.keys(budgets).map(parent => {
     const monthlyBudget = budgets[parent];
@@ -495,7 +691,7 @@ function render() {
           </div>
         </summary>
         <div class="budget-line">Monthly accrual: ${dollars(monthlyBudget)} · Months elapsed: ${monthsElapsed}</div>
-        <div class="sub-breakdown">${subBreakdown}</div>
+        <div>${subBreakdown}</div>
       </details>
     `;
   }).join("");
@@ -504,117 +700,136 @@ function render() {
     const budget = budgets[parent];
     const actual = monthlyParentTotals[parent] || 0;
     const variance = budget - actual;
-    const subTotals = getSubTotals(parent, "month");
-
-    const subBreakdown = Object.keys(subTotals).length
-      ? Object.entries(subTotals).sort((a, b) => b[1] - a[1]).map(([sub, amount]) => `
-        <div class="sub-row"><span>${sub}</span><strong>${dollars(amount)}</strong></div>
-      `).join("")
-      : `<div class="empty">No spend this month</div>`;
 
     return `
-      <details class="card">
-        <summary>
-          <div>
-            <strong>${parent}</strong>
-            <div class="muted">${dollars(actual)} spent this month</div>
-          </div>
-          <div class="${variance >= 0 ? "good" : "bad"}">
+      <div class="card">
+        <div class="metric">
+          <span><strong>${parent}</strong></span>
+          <span class="${variance >= 0 ? "good" : "bad"}">
             ${variance >= 0 ? dollars(variance) + " left" : dollars(Math.abs(variance)) + " over"}
-          </div>
-        </summary>
-        <div class="budget-line">Monthly budget: ${dollars(budget)} · Actual: ${dollars(actual)}</div>
-        <div class="sub-breakdown">${subBreakdown}</div>
-      </details>
+          </span>
+        </div>
+        <div class="muted">Budget ${dollars(budget)} · Actual ${dollars(actual)}</div>
+      </div>
     `;
   }).join("");
 
-  const txRows = getThisMonthTransactions()
-    .slice()
-    .sort((a, b) => new Date(b.date) - new Date(a.date))
-    .map(t => `
+  return `
+    <section class="summary">
+      <h2>This Month Cash View</h2>
+      <div class="metric"><span>Income</span><strong>${dollars(monthlySummary.income)}</strong></div>
+      <div class="metric"><span>Expenses</span><strong>${dollars(monthlySummary.expenses)}</strong></div>
+      <div class="metric total"><span>Cash surplus this month</span><strong>${dollars(monthlySummary.surplus)}</strong></div>
+      <p class="muted">Dashboard only includes transactions from ${budgetStartDate} onward.</p>
+    </section>
+
+    <section class="summary">
+      <h2>Category Balance</h2>
+      <p class="muted">Accrual view from ${budgetStartDate}. This smooths annual, quarterly and uneven bills.</p>
+      <div class="metric"><span>Budget accrued</span><strong>${dollars(accrualSummary.totalBudgetAccrued)}</strong></div>
+      <div class="metric"><span>Actual spent</span><strong>${dollars(accrualSummary.totalActualSpent)}</strong></div>
+      <div class="metric total">
+        <span>Overall balance</span>
+        <strong class="${accrualSummary.balance >= 0 ? "good" : "bad"}">
+          ${accrualSummary.balance >= 0 ? dollars(accrualSummary.balance) + " ahead" : dollars(Math.abs(accrualSummary.balance)) + " behind"}
+        </strong>
+      </div>
+    </section>
+
+    <section>
+      <h2>Accrual Balance by Category</h2>
+      ${accrualRows}
+    </section>
+
+    <section>
+      <h2>This Month vs Budget</h2>
+      ${monthlyRows}
+    </section>
+  `;
+}
+
+function renderTransactionHistory() {
+  const parentOptions = Object.keys(categoryModel)
+    .map(parent => `<option value="${parent}">${parent}</option>`)
+    .join("");
+
+  const needsReview = getNeedsReviewTransactions();
+  const allTransactions = getAllVisibleTransactions();
+
+  const renderList = list => list.length
+    ? list.map(t => `
       <div class="transaction">
         <div>
           <strong>${t.sub}</strong>
-          <div class="muted">${t.parent} · ${t.date}${t.note ? " · " + t.note : ""}${t.type === "needs_review" ? " · Needs review" : ""}</div>
+          <div class="muted">${t.parent} · ${t.date}${t.note ? " · " + t.note : ""}</div>
+          ${t.type === "needs_review" ? `<span class="pill">Needs review</span>` : ""}
         </div>
         <div>
           <strong>${t.amount < 0 ? "-" : "+"}${dollars(Math.abs(t.amount))}</strong>
-          <div style="display:flex; gap:6px; margin-top:6px;">
+          <div class="transaction-actions">
             <button onclick="editTransaction(${t.id})">Edit</button>
             <button onclick="deleteTransaction(${t.id})">Delete</button>
           </div>
         </div>
       </div>
-    `).join("");
+    `).join("")
+    : `<p class="muted">No transactions to show.</p>`;
 
+  return `
+    <section class="panel">
+      <h2>Import CSV</h2>
+      <p class="muted">Import CBA CSVs. Transfers and credit card repayments are hidden. ATM withdrawals and unmapped items go to Needs Review.</p>
+      <input type="file" accept=".csv" multiple onchange="handleCSVUpload(event)" />
+    </section>
+
+    <section class="panel">
+      <h2>Add Transaction</h2>
+      <form onsubmit="addTransaction(event)">
+        <input type="date" name="date" required />
+        <input type="number" step="0.01" name="amount" placeholder="Amount (+ income / - expense)" required />
+
+        <select name="parent" id="parent" onchange="updateSubCategories(this.value)" required>
+          ${parentOptions}
+        </select>
+
+        <select name="sub" id="sub" required></select>
+
+        <input type="text" name="note" placeholder="Note / merchant" />
+        <button class="primary">Add Transaction</button>
+      </form>
+    </section>
+
+    <section>
+      <h2>Needs Review</h2>
+      ${renderList(needsReview)}
+    </section>
+
+    <section>
+      <h2>All Visible Transactions</h2>
+      <p class="muted">Hidden transfers and credit card repayments do not appear here.</p>
+      ${renderList(allTransactions)}
+    </section>
+  `;
+}
+
+function render() {
   document.getElementById("app").innerHTML = `
     <main>
       <h1>Goodman Finances Inc.</h1>
 
-      <section class="summary">
-        <h2>This Month Cash View</h2>
-        <div class="metric"><span>Income</span><strong>${dollars(monthlySummary.income)}</strong></div>
-        <div class="metric"><span>Expenses</span><strong>${dollars(monthlySummary.expenses)}</strong></div>
-        <div class="metric total"><span>Cash surplus this month</span><strong>${dollars(monthlySummary.surplus)}</strong></div>
-      </section>
+      <div class="tabs">
+        <button class="${activeTab === "dashboard" ? "active" : ""}" onclick="setTab('dashboard')">Dashboard</button>
+        <button class="${activeTab === "transactions" ? "active" : ""}" onclick="setTab('transactions')">Transaction History</button>
+      </div>
 
-      <section class="summary">
-        <h2>Category Balance</h2>
-        <p class="muted">Accrual view from ${budgetStartDate}. This smooths annual, quarterly and uneven bills.</p>
-        <div class="metric"><span>Budget accrued</span><strong>${dollars(accrualSummary.totalBudgetAccrued)}</strong></div>
-        <div class="metric"><span>Actual spent</span><strong>${dollars(accrualSummary.totalActualSpent)}</strong></div>
-        <div class="metric total">
-          <span>Overall balance</span>
-          <strong class="${accrualSummary.balance >= 0 ? "good" : "bad"}">
-            ${accrualSummary.balance >= 0 ? dollars(accrualSummary.balance) + " ahead" : dollars(Math.abs(accrualSummary.balance)) + " behind"}
-          </strong>
-        </div>
-        ${needsReviewCount ? `<p class="bad"><strong>${needsReviewCount}</strong> transaction(s) need review.</p>` : ""}
-      </section>
-
-      <section>
-        <h2>Import CSV</h2>
-        <p class="muted">Import CBA CSVs. Internal transfers and credit card repayments are hidden. ATM withdrawals and unmapped items go to Needs Review.</p>
-        <input type="file" accept=".csv" multiple onchange="handleCSVUpload(event)" />
-      </section>
-
-      <section>
-        <h2>Accrual Balance by Category</h2>
-        ${accrualRows}
-      </section>
-
-      <section>
-        <h2>This Month vs Budget</h2>
-        <p class="muted">Useful for cash awareness, but lumpy bills should be judged using Category Balance above.</p>
-        ${monthlyRows}
-      </section>
-
-      <section>
-        <h2>Add Transaction</h2>
-        <form onsubmit="addTransaction(event)">
-          <input type="date" name="date" required />
-          <input type="number" step="0.01" name="amount" placeholder="Amount (+ income / - expense)" required />
-
-          <select name="parent" id="parent" onchange="updateSubCategories(this.value)" required>
-            ${parentOptions}
-          </select>
-
-          <select name="sub" id="sub" required></select>
-
-          <input type="text" name="note" placeholder="Note / merchant" />
-          <button>Add</button>
-        </form>
-      </section>
-
-      <section>
-        <h2>This Month Transactions</h2>
-        ${txRows || `<p class="muted">No transactions this month yet.</p>`}
-      </section>
+      ${activeTab === "dashboard" ? renderDashboard() : renderTransactionHistory()}
     </main>
   `;
 
-  updateSubCategories(document.getElementById("parent").value);
+  if (activeTab === "transactions") {
+    const parentEl = document.getElementById("parent");
+    if (parentEl) updateSubCategories(parentEl.value);
+  }
 }
 
 render();
