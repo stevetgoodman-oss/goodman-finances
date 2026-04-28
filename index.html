@@ -1077,7 +1077,7 @@ function renderDashboard() {
       <div class="health-card">
         <span class="label">Needs review</span>
         <strong class="value">${needsReviewCount}</strong>
-        <div class="note">${needsReviewCount ? dollars(needsReviewTotal) + " unallocated" : "All clear"}</div>
+        <div class="note">${needsReviewCount ? dollars(needsReviewTotal) + " requires classification" : "All clear"}</div>
       </div>
     </div>
   `;
@@ -1136,7 +1136,15 @@ function renderDashboard() {
     <section class="hero-card">
       <div class="hero-label">Financial position</div>
       <div class="hero-value">
-        ${accrualSummary.balance >= 0 ? dollars(accrualSummary.balance) + " ahead" : dollars(Math.abs(accrualSummary.balance)) + " behind"}
+        ${
+          viewMode === "monthly"
+            ? monthlySummary.surplus >= 0
+              ? dollars(monthlySummary.surplus) + " remaining"
+              : dollars(Math.abs(monthlySummary.surplus)) + " over"
+            : accrualSummary.balance >= 0
+              ? dollars(accrualSummary.balance) + " ahead"
+              : dollars(Math.abs(accrualSummary.balance)) + " behind"
+        }
       </div>
       <div class="hero-context">
         Biggest ${viewMode === "monthly" ? "monthly" : "accrual"} spend driver:
@@ -1146,10 +1154,6 @@ function renderDashboard() {
         <div class="hero-metric">
           <span>Cash surplus this month</span>
           <strong>${dollars(monthlySummary.surplus)}</strong>
-        </div>
-        <div class="hero-metric">
-          <span>Review queue</span>
-          <strong>${needsReviewCount} · ${dollars(needsReviewTotal)}</strong>
         </div>
       </div>
     </section>
