@@ -8,80 +8,279 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-
 <div id="app"></div>
 
 <script>
-const app = document.getElementById('app');
+const categoryModel = {
+  "Household": [
+    "AGL gas & electricity",
+    "Water",
+    "Rates",
+    "Home insurance"
+  ],
+  "Transport": [
+    "Petrol",
+    "Car insurance",
+    "Car rego"
+  ],
+  "Living": [
+    "Groceries",
+    "Chemist"
+  ],
+  "Lifestyle": [
+    "Coffee",
+    "Takeaway",
+    "Steve Lou entertainment"
+  ],
+  "Kids": [
+    "Kids swimming lessons",
+    "Mila gymnastics",
+    "Mila Acro",
+    "Mila school fees",
+    "Miscellaneous kids"
+  ],
+  "Subscriptions": [
+    "Netflix",
+    "Amazon",
+    "Spotify",
+    "Stronglifts 5x5 app",
+    "Doordash app subscription",
+    "Hayu",
+    "Disney",
+    "HBO",
+    "Apple storage",
+    "Google storage"
+  ],
+  "Utilities / Personal": [
+    "Phone and internet",
+    "Gym"
+  ],
+  "Income": [
+    "Salary",
+    "Bonus",
+    "Other income"
+  ],
+  "Investing / Savings": [
+    "ETFs",
+    "Super",
+    "Savings"
+  ]
+};
 
-let transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+const budgets = {
+  "Household": 0,
+  "Transport": 0,
+  "Living": 0,
+  "Lifestyle": 0,
+  "Kids": 0,
+  "Subscriptions": 0,
+  "Utilities / Personal": 0,
+  "Investing / Savings": 0
+};
+
+let transactions = JSON.parse(localStorage.getItem("transactions") || "[]");
 
 function save() {
-  localStorage.setItem('transactions', JSON.stringify(transactions));
+  localStorage.setItem("transactions", JSON.stringify(transactions));
   render();
+}
+
+function isThisMonth(dateString) {
+  const d = new Date(dateString);
+  const now = new Date();
+  return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
 }
 
 function addTransaction(e) {
   e.preventDefault();
   const form = e.target;
 
-  const transaction = {
+  transactions.push({
+    id: Date.now(),
     date: form.date.value,
     amount: parseFloat(form.amount.value),
-    category: form.category.value,
+    parent: form.parent.value,
+    sub: form.sub.value,
     note: form.note.value
-  };
+  });
 
-  transactions.push(transaction);
   save();
-  form.reset();
 }
 
-function getTotals() {
-  const income = transactions
+function deleteTransaction(id) {
+  transactions = transactions.filter(t => t.id !== id);
+  save();
+}
+
+function getThisMonthTransactions() {
+  return transactions.filter(t => isThisMonth(t.date));
+}
+
+function getParentTotals() {
+  const totals = {};
+  Object.keys(budgets).forEach(cat => totals[cat] = 0);
+
+  getThisMonthTransactions().forEach(t => {
+    if (t.amount < 0 && totals[t.parent] !== undefined) {
+      totals[t.parent] += Math.abs(t.amount);
+    }
+  });
+
+  return totals;
+}
+
+function getSubTotals(parent) {
+  const totals = {};
+
+  getThisMonthTransactions()
+    .filter(t => t.parent === parent && t.amount < 0)
+    .forEach(t => {
+      totals[t.sub] = (totals[t.sub] || 0) + Math.abs(t.amount);
+    });
+
+  return totals;
+}
+
+function getSummary() {
+  const monthTx = getThisMonthTransactions();
+
+  const income = monthTx
     .filter(t => t.amount > 0)
-    .reduce((a,b) => a + b.amount, 0);
+    .reduce((sum, t) => sum + t.amount, 0);
 
-  const expenses = transactions
+  const expenses = monthTx
     .filter(t => t.amount < 0)
-    .reduce((a,b) => a + b.amount, 0);
+    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
-  return { income, expenses, net: income + expenses };
+  return {
+    income,
+    expenses,
+    surplus: income - expenses
+  };
+}
+
+function updateSubCategories(parentValue) {
+  const subSelect = document.getElementById("sub");
+  subSelect.innerHTML = categoryModel[parentValue]
+    .map(sub => `<option value="${sub}">${sub}</option>`)
+    .join("");
 }
 
 function render() {
-  const totals = getTotals();
+  const summary = getSummary();
+  const parentTotals = getParentTotals();
 
-  app.innerHTML = `
-    <div style="padding:20px;font-family:-apple-system;">
+  const parentOptions = Object.keys(categoryModel)
+    .map(parent => `<option value="${parent}">${parent}</option>`)
+    .join("");
+
+  const budgetRows = Object.keys(budgets).map(parent => {
+    const budget = budgets[parent];
+    const actual = parentTotals[parent] || 0;
+    const variance = budget - actual;
+    const subTotals = getSubTotals(parent);
+
+    const subBreakdown = Object.keys(subTotals).length
+      ? Object.entries(subTotals)
+          .sort((a, b) => b[1] - a[1])
+          .map(([sub, amount]) => `
+            <div class="sub-row">
+              <span>${sub}</span>
+              <strong>$${amount.toFixed(2)}</strong>
+            </div>
+          `).join("")
+      : `<div class="empty">No spend yet</div>`;
+
+    return `
+      <details class="card">
+        <summary>
+          <div>
+            <strong>${parent}</strong>
+            <div class="muted">$${actual.toFixed(2)} spent</div>
+          </div>
+          <div class="${variance >= 0 ? "good" : "bad"}">
+            ${variance >= 0 ? "$" + variance.toFixed(2) + " left" : "$" + Math.abs(variance).toFixed(2) + " over"}
+          </div>
+        </summary>
+        <div class="budget-line">
+          Budget: $${budget.toFixed(2)} · Actual: $${actual.toFixed(2)}
+        </div>
+        <div class="sub-breakdown">
+          ${subBreakdown}
+        </div>
+      </details>
+    `;
+  }).join("");
+
+  const txRows = getThisMonthTransactions()
+    .slice()
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .map(t => `
+      <div class="transaction">
+        <div>
+          <strong>${t.sub}</strong>
+          <div class="muted">${t.parent} · ${t.date}${t.note ? " · " + t.note : ""}</div>
+        </div>
+        <div>
+          <strong>${t.amount < 0 ? "-" : "+"}$${Math.abs(t.amount).toFixed(2)}</strong>
+          <button onclick="deleteTransaction(${t.id})">Delete</button>
+        </div>
+      </div>
+    `).join("");
+
+  document.getElementById("app").innerHTML = `
+    <main>
       <h1>Goodman Finances Inc.</h1>
 
-      <h3>Summary</h3>
-      <p>Income: $${totals.income.toFixed(2)}</p>
-      <p>Expenses: $${totals.expenses.toFixed(2)}</p>
-      <p><strong>Net: $${totals.net.toFixed(2)}</strong></p>
-
-      <h3>Add Transaction</h3>
-      <form onsubmit="addTransaction(event)">
-        <input type="date" name="date" required /><br/><br/>
-        <input type="number" step="0.01" name="amount" placeholder="Amount (+ income / - expense)" required /><br/><br/>
-        <input type="text" name="category" placeholder="Category" required /><br/><br/>
-        <input type="text" name="note" placeholder="Note" /><br/><br/>
-        <button>Add</button>
-      </form>
-
-      <h3>Transactions</h3>
-      ${transactions.map(t => `
-        <div style="border-bottom:1px solid #ddd;padding:8px 0;">
-          ${t.date} — ${t.category} — $${t.amount} ${t.note ? `(${t.note})` : ''}
+      <section class="summary">
+        <h2>This Month</h2>
+        <div class="metric">
+          <span>Income</span>
+          <strong>$${summary.income.toFixed(2)}</strong>
         </div>
-      `).join('')}
-    </div>
+        <div class="metric">
+          <span>Expenses</span>
+          <strong>$${summary.expenses.toFixed(2)}</strong>
+        </div>
+        <div class="metric total">
+          <span>Surplus remaining</span>
+          <strong>$${summary.surplus.toFixed(2)}</strong>
+        </div>
+      </section>
+
+      <section>
+        <h2>Budget vs Actual</h2>
+        ${budgetRows}
+      </section>
+
+      <section>
+        <h2>Add Transaction</h2>
+        <form onsubmit="addTransaction(event)">
+          <input type="date" name="date" required />
+          <input type="number" step="0.01" name="amount" placeholder="Amount (+ income / - expense)" required />
+
+          <select name="parent" id="parent" onchange="updateSubCategories(this.value)" required>
+            ${parentOptions}
+          </select>
+
+          <select name="sub" id="sub" required></select>
+
+          <input type="text" name="note" placeholder="Note / merchant" />
+          <button>Add</button>
+        </form>
+      </section>
+
+      <section>
+        <h2>Transactions</h2>
+        ${txRows || `<p class="muted">No transactions this month yet.</p>`}
+      </section>
+    </main>
   `;
+
+  updateSubCategories(document.getElementById("parent").value);
 }
 
 render();
 </script>
-
 </body>
 </html>
