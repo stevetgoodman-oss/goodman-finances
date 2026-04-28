@@ -1,4 +1,6 @@
-<!DOCTYPE html>
+from pathlib import Path
+
+html = r'''<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -6,27 +8,72 @@
 <title>Goodman Finances Inc.</title>
 
 <style>
+:root {
+  --navy: #0B1F3A;
+  --navy-2: #102A4C;
+  --blue: #2563EB;
+  --bg: #F3F6FA;
+  --card: #FFFFFF;
+  --text: #111827;
+  --muted: #64748B;
+  --border: #E5E7EB;
+  --green: #059669;
+  --green-bg: #ECFDF5;
+  --amber: #D97706;
+  --amber-bg: #FFFBEB;
+  --red: #DC2626;
+  --red-bg: #FEF2F2;
+  --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #f4f4f5;
-  color: #111827;
+  background: var(--bg);
+  color: var(--text);
 }
 
 main {
-  max-width: 720px;
+  max-width: 760px;
   margin: 0 auto;
   padding: 16px;
-  padding-bottom: 80px;
+  padding-bottom: 90px;
 }
 
-h1 { font-size: 28px; margin: 8px 0 16px; }
-h2 { font-size: 20px; margin: 20px 0 10px; }
+.app-header {
+  padding: 10px 2px 14px;
+}
+
+.app-title {
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--navy);
+  margin: 0;
+}
+
+.app-subtitle {
+  color: var(--muted);
+  margin-top: 6px;
+  font-size: 14px;
+}
 
 .tabs {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   gap: 8px;
-  margin-bottom: 16px;
+  margin: 0 -16px 16px;
+  padding: 10px 16px;
+  background: rgba(243, 246, 250, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.7);
 }
 
 .tabs button {
@@ -34,78 +81,284 @@ h2 { font-size: 20px; margin: 20px 0 10px; }
   border: 0;
   border-radius: 999px;
   padding: 12px;
-  font-weight: 700;
-  background: #e5e7eb;
+  font-weight: 800;
+  background: #E2E8F0;
+  color: var(--navy);
 }
 
 .tabs button.active {
-  background: #111827;
+  background: var(--navy);
   color: white;
+  box-shadow: 0 8px 18px rgba(11,31,58,0.18);
 }
 
-.summary, .card, .panel {
-  background: white;
-  border-radius: 14px;
-  padding: 14px;
-  margin-bottom: 12px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+.hero-card {
+  background: linear-gradient(135deg, var(--navy), var(--navy-2));
+  color: white;
+  border-radius: 24px;
+  padding: 20px;
+  margin-bottom: 14px;
+  box-shadow: 0 16px 36px rgba(11, 31, 58, 0.22);
 }
 
-.metric {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 0;
-  border-bottom: 1px solid #eee;
+.hero-label {
+  font-size: 13px;
+  opacity: 0.78;
+  margin-bottom: 6px;
 }
 
-.metric:last-child { border-bottom: 0; }
+.hero-value {
+  font-size: 34px;
+  line-height: 1.05;
+  font-weight: 900;
+  letter-spacing: -0.05em;
+}
 
-.metric.total {
+.hero-context {
+  font-size: 14px;
+  opacity: 0.88;
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.hero-metric {
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 16px;
+  padding: 12px;
+}
+
+.hero-metric span {
+  display: block;
+  font-size: 12px;
+  opacity: 0.76;
+}
+
+.hero-metric strong {
+  display: block;
+  margin-top: 4px;
   font-size: 18px;
-  font-weight: 700;
 }
 
-.muted {
-  color: #6b7280;
+.card, .summary, .panel {
+  background: var(--card);
+  border-radius: 18px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow);
+  border: 1px solid rgba(226,232,240,0.9);
+}
+
+.section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 22px 0 10px;
+}
+
+.section-title h2 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+  color: var(--navy);
+}
+
+.section-title span {
+  color: var(--muted);
   font-size: 13px;
 }
 
-.good { color: #047857; }
-.bad { color: #dc2626; }
-
-details summary {
-  list-style: none;
+.metric-row {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
   align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.metric-row:last-child {
+  border-bottom: 0;
+}
+
+.metric-row span {
+  color: var(--muted);
+}
+
+.metric-row strong {
+  font-size: 18px;
+}
+
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.health-card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 14px;
+  box-shadow: 0 4px 14px rgba(15,23,42,0.04);
+}
+
+.health-card .label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.health-card .value {
+  display: block;
+  margin-top: 6px;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  color: var(--navy);
+}
+
+.health-card .note {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+details.category-card {
+  background: var(--card);
+  border-radius: 18px;
+  padding: 14px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow);
+  border: 1px solid rgba(226,232,240,0.9);
+}
+
+details.category-card summary {
+  list-style: none;
+  display: block;
   cursor: pointer;
 }
 
-details summary::-webkit-details-marker { display: none; }
+details.category-card summary::-webkit-details-marker {
+  display: none;
+}
 
-.budget-line {
-  color: #6b7280;
+.category-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.category-name {
+  font-weight: 850;
+  font-size: 16px;
+  color: var(--navy);
+}
+
+.category-sub {
+  color: var(--muted);
   font-size: 13px;
-  margin: 10px 0;
+  margin-top: 4px;
+}
+
+.category-amount {
+  text-align: right;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 800;
+  margin-top: 6px;
+}
+
+.status-good {
+  color: var(--green);
+  background: var(--green-bg);
+}
+
+.status-watch {
+  color: var(--amber);
+  background: var(--amber-bg);
+}
+
+.status-bad {
+  color: var(--red);
+  background: var(--red-bg);
+}
+
+.progress {
+  height: 8px;
+  border-radius: 999px;
+  background: #E5E7EB;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--green);
+  width: 0%;
+}
+
+.progress-fill.watch {
+  background: var(--amber);
+}
+
+.progress-fill.bad {
+  background: var(--red);
 }
 
 .sub-row {
   display: flex;
   justify-content: space-between;
-  border-top: 1px solid #f1f1f1;
-  padding: 8px 0;
+  border-top: 1px solid #F1F5F9;
+  padding: 9px 0;
+  color: var(--text);
+}
+
+.sub-row span {
+  color: var(--muted);
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 10px 0 2px;
 }
 
 .transaction {
   background: white;
-  border-radius: 12px;
-  padding: 12px;
+  border-radius: 16px;
+  padding: 14px;
   margin-bottom: 10px;
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  box-shadow: 0 4px 14px rgba(15,23,42,0.05);
+  border: 1px solid var(--border);
+}
+
+.transaction strong {
+  color: var(--navy);
 }
 
 .transaction-actions {
@@ -121,42 +374,55 @@ button, input, select {
 
 button {
   border: 0;
-  border-radius: 10px;
-  padding: 8px 10px;
-  background: #e5e7eb;
+  border-radius: 12px;
+  padding: 9px 11px;
+  background: #E2E8F0;
+  color: var(--navy);
+  font-weight: 700;
 }
 
 button.primary {
-  background: #111827;
+  background: var(--navy);
   color: white;
   width: 100%;
   margin-top: 8px;
+  padding: 12px;
 }
 
 input, select {
   width: 100%;
-  padding: 11px;
+  padding: 12px;
   margin: 6px 0;
-  border: 1px solid #d1d5db;
-  border-radius: 10px;
+  border: 1px solid #CBD5E1;
+  border-radius: 12px;
   box-sizing: border-box;
   background: white;
 }
 
-.empty {
-  color: #9ca3af;
-  font-size: 13px;
-  padding: 8px 0;
-}
-
 .pill {
   display: inline-block;
-  padding: 3px 8px;
+  padding: 4px 9px;
   border-radius: 999px;
   font-size: 12px;
-  font-weight: 700;
-  background: #fef3c7;
-  color: #92400e;
+  font-weight: 800;
+  background: var(--amber-bg);
+  color: var(--amber);
+  margin-top: 6px;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.good { color: var(--green); }
+.bad { color: var(--red); }
+.watch { color: var(--amber); }
+
+@media (max-width: 480px) {
+  main { padding: 14px; padding-bottom: 80px; }
+  .hero-value { font-size: 30px; }
+  .health-grid { grid-template-columns: 1fr; }
 }
 </style>
 </head>
@@ -203,8 +469,18 @@ function save() {
   render();
 }
 
-function dollars(value) {
-  return "$" + Number(value || 0).toFixed(2);
+function dollars(value, decimals = 0) {
+  return "$" + Number(value || 0).toLocaleString("en-AU", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals
+  });
+}
+
+function dollarsExact(value) {
+  return "$" + Number(value || 0).toLocaleString("en-AU", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
 }
 
 function normaliseText(text) {
@@ -367,6 +643,14 @@ function getAccrualSummary() {
     totalActualSpent,
     balance: totalBudgetAccrued - totalActualSpent
   };
+}
+
+function getCategoryStatus(actual, budget) {
+  if (budget === 0) return { label: "Tracking", cls: "status-good", fill: "progress-fill", pct: 0 };
+  const pct = actual / budget;
+  if (pct > 1) return { label: "Over", cls: "status-bad", fill: "progress-fill bad", pct: Math.min(pct * 100, 100) };
+  if (pct >= 0.8) return { label: "Watch", cls: "status-watch", fill: "progress-fill watch", pct: pct * 100 };
+  return { label: "Healthy", cls: "status-good", fill: "progress-fill", pct: pct * 100 };
 }
 
 function updateSubCategories(parentValue) {
@@ -665,6 +949,38 @@ function renderDashboard() {
   const monthlyParentTotals = getThisMonthParentTotals();
   const accrualParentTotals = getAccrualParentTotals();
   const monthsElapsed = monthsElapsedSinceBudgetStart();
+  const needsReviewCount = getNeedsReviewTransactions().length;
+
+  let biggestDriver = "No spending yet";
+  let biggestDriverAmount = 0;
+  const driverEntries = Object.entries(accrualParentTotals)
+    .filter(([parent, amount]) => amount > 0)
+    .sort((a, b) => b[1] - a[1]);
+
+  if (driverEntries.length) {
+    biggestDriver = driverEntries[0][0];
+    biggestDriverAmount = driverEntries[0][1];
+  }
+
+  const healthCards = `
+    <div class="health-grid">
+      <div class="health-card">
+        <span class="label">Budget accrued</span>
+        <strong class="value">${dollars(accrualSummary.totalBudgetAccrued)}</strong>
+        <div class="note">Since ${budgetStartDate}</div>
+      </div>
+      <div class="health-card">
+        <span class="label">Actual spend</span>
+        <strong class="value">${dollars(accrualSummary.totalActualSpent)}</strong>
+        <div class="note">Matched transactions</div>
+      </div>
+      <div class="health-card">
+        <span class="label">Needs review</span>
+        <strong class="value">${needsReviewCount}</strong>
+        <div class="note">${needsReviewCount ? "Action required" : "All clear"}</div>
+      </div>
+    </div>
+  `;
 
   const accrualRows = Object.keys(budgets).map(parent => {
     const monthlyBudget = budgets[parent];
@@ -672,6 +988,7 @@ function renderDashboard() {
     const actual = accrualParentTotals[parent] || 0;
     const balance = accrued - actual;
     const subTotals = getSubTotals(parent, "accrual");
+    const status = getCategoryStatus(actual, accrued || monthlyBudget);
 
     const subBreakdown = Object.keys(subTotals).length
       ? Object.entries(subTotals).sort((a, b) => b[1] - a[1]).map(([sub, amount]) => `
@@ -680,14 +997,20 @@ function renderDashboard() {
       : `<div class="empty">No spend since budget start</div>`;
 
     return `
-      <details class="card">
+      <details class="category-card">
         <summary>
-          <div>
-            <strong>${parent}</strong>
-            <div class="muted">Accrued ${dollars(accrued)} · Spent ${dollars(actual)}</div>
+          <div class="category-top">
+            <div>
+              <div class="category-name">${parent}</div>
+              <div class="category-sub">Accrued ${dollars(accrued)} · Spent ${dollars(actual)}</div>
+              <span class="status-chip ${balance >= 0 ? "status-good" : "status-bad"}">
+                ${balance >= 0 ? dollars(balance) + " ahead" : dollars(Math.abs(balance)) + " behind"}
+              </span>
+            </div>
+            <div class="category-amount">${dollars(actual)}</div>
           </div>
-          <div class="${balance >= 0 ? "good" : "bad"}">
-            ${balance >= 0 ? dollars(balance) + " ahead" : dollars(Math.abs(balance)) + " behind"}
+          <div class="progress">
+            <div class="${status.fill}" style="width:${status.pct}%"></div>
           </div>
         </summary>
         <div class="budget-line">Monthly accrual: ${dollars(monthlyBudget)} · Months elapsed: ${monthsElapsed}</div>
@@ -700,35 +1023,80 @@ function renderDashboard() {
     const budget = budgets[parent];
     const actual = monthlyParentTotals[parent] || 0;
     const variance = budget - actual;
+    const status = getCategoryStatus(actual, budget);
+    const subTotals = getSubTotals(parent, "month");
+
+    const subBreakdown = Object.keys(subTotals).length
+      ? Object.entries(subTotals).sort((a, b) => b[1] - a[1]).map(([sub, amount]) => `
+        <div class="sub-row"><span>${sub}</span><strong>${dollars(amount)}</strong></div>
+      `).join("")
+      : `<div class="empty">No spend this month</div>`;
 
     return `
-      <div class="card">
-        <div class="metric">
-          <span><strong>${parent}</strong></span>
-          <span class="${variance >= 0 ? "good" : "bad"}">
-            ${variance >= 0 ? dollars(variance) + " left" : dollars(Math.abs(variance)) + " over"}
-          </span>
-        </div>
-        <div class="muted">Budget ${dollars(budget)} · Actual ${dollars(actual)}</div>
-      </div>
+      <details class="category-card">
+        <summary>
+          <div class="category-top">
+            <div>
+              <div class="category-name">${parent}</div>
+              <div class="category-sub">${dollars(actual)} of ${dollars(budget)} used</div>
+              <span class="status-chip ${status.cls}">${status.label}</span>
+            </div>
+            <div class="category-amount ${variance >= 0 ? "good" : "bad"}">
+              ${variance >= 0 ? dollars(variance) + " left" : dollars(Math.abs(variance)) + " over"}
+            </div>
+          </div>
+          <div class="progress">
+            <div class="${status.fill}" style="width:${status.pct}%"></div>
+          </div>
+        </summary>
+        <div class="budget-line">Monthly budget: ${dollars(budget)} · Actual: ${dollars(actual)}</div>
+        <div>${subBreakdown}</div>
+      </details>
     `;
   }).join("");
 
   return `
-    <section class="summary">
-      <h2>This Month Cash View</h2>
-      <div class="metric"><span>Income</span><strong>${dollars(monthlySummary.income)}</strong></div>
-      <div class="metric"><span>Expenses</span><strong>${dollars(monthlySummary.expenses)}</strong></div>
-      <div class="metric total"><span>Cash surplus this month</span><strong>${dollars(monthlySummary.surplus)}</strong></div>
-      <p class="muted">Dashboard only includes transactions from ${budgetStartDate} onward.</p>
+    <section class="hero-card">
+      <div class="hero-label">Financial position</div>
+      <div class="hero-value ${accrualSummary.balance >= 0 ? "" : "bad"}">
+        ${accrualSummary.balance >= 0 ? dollars(accrualSummary.balance) + " ahead" : dollars(Math.abs(accrualSummary.balance)) + " behind"}
+      </div>
+      <div class="hero-context">
+        Biggest spend driver: <strong>${biggestDriver}${biggestDriverAmount ? " · " + dollars(biggestDriverAmount) : ""}</strong>
+      </div>
+      <div class="hero-grid">
+        <div class="hero-metric">
+          <span>Cash surplus this month</span>
+          <strong>${dollars(monthlySummary.surplus)}</strong>
+        </div>
+        <div class="hero-metric">
+          <span>Review queue</span>
+          <strong>${needsReviewCount}</strong>
+        </div>
+      </div>
     </section>
 
+    ${healthCards}
+
+    <div class="section-title">
+      <h2>This Month Cash View</h2>
+      <span>From ${budgetStartDate}</span>
+    </div>
     <section class="summary">
+      <div class="metric-row"><span>Income</span><strong>${dollars(monthlySummary.income)}</strong></div>
+      <div class="metric-row"><span>Expenses</span><strong>${dollars(monthlySummary.expenses)}</strong></div>
+      <div class="metric-row total"><span>Cash surplus this month</span><strong>${dollars(monthlySummary.surplus)}</strong></div>
+    </section>
+
+    <div class="section-title">
       <h2>Category Balance</h2>
+      <span>Accrual truth</span>
+    </div>
+    <section class="summary">
       <p class="muted">Accrual view from ${budgetStartDate}. This smooths annual, quarterly and uneven bills.</p>
-      <div class="metric"><span>Budget accrued</span><strong>${dollars(accrualSummary.totalBudgetAccrued)}</strong></div>
-      <div class="metric"><span>Actual spent</span><strong>${dollars(accrualSummary.totalActualSpent)}</strong></div>
-      <div class="metric total">
+      <div class="metric-row"><span>Budget accrued</span><strong>${dollars(accrualSummary.totalBudgetAccrued)}</strong></div>
+      <div class="metric-row"><span>Actual spent</span><strong>${dollars(accrualSummary.totalActualSpent)}</strong></div>
+      <div class="metric-row total">
         <span>Overall balance</span>
         <strong class="${accrualSummary.balance >= 0 ? "good" : "bad"}">
           ${accrualSummary.balance >= 0 ? dollars(accrualSummary.balance) + " ahead" : dollars(Math.abs(accrualSummary.balance)) + " behind"}
@@ -736,15 +1104,17 @@ function renderDashboard() {
       </div>
     </section>
 
-    <section>
+    <div class="section-title">
       <h2>Accrual Balance by Category</h2>
-      ${accrualRows}
-    </section>
+      <span>Tap to drill down</span>
+    </div>
+    ${accrualRows}
 
-    <section>
+    <div class="section-title">
       <h2>This Month vs Budget</h2>
-      ${monthlyRows}
-    </section>
+      <span>Cash awareness</span>
+    </div>
+    ${monthlyRows}
   `;
 }
 
@@ -765,7 +1135,7 @@ function renderTransactionHistory() {
           ${t.type === "needs_review" ? `<span class="pill">Needs review</span>` : ""}
         </div>
         <div>
-          <strong>${t.amount < 0 ? "-" : "+"}${dollars(Math.abs(t.amount))}</strong>
+          <strong>${t.amount < 0 ? "-" : "+"}${dollarsExact(Math.abs(t.amount))}</strong>
           <div class="transaction-actions">
             <button onclick="editTransaction(${t.id})">Edit</button>
             <button onclick="deleteTransaction(${t.id})">Delete</button>
@@ -799,23 +1169,28 @@ function renderTransactionHistory() {
       </form>
     </section>
 
-    <section>
+    <div class="section-title">
       <h2>Needs Review</h2>
-      ${renderList(needsReview)}
-    </section>
+      <span>${needsReview.length} items</span>
+    </div>
+    ${renderList(needsReview)}
 
-    <section>
+    <div class="section-title">
       <h2>All Visible Transactions</h2>
-      <p class="muted">Hidden transfers and credit card repayments do not appear here.</p>
-      ${renderList(allTransactions)}
-    </section>
+      <span>${allTransactions.length} items</span>
+    </div>
+    <p class="muted">Hidden transfers and credit card repayments do not appear here.</p>
+    ${renderList(allTransactions)}
   `;
 }
 
 function render() {
   document.getElementById("app").innerHTML = `
     <main>
-      <h1>Goodman Finances Inc.</h1>
+      <div class="app-header">
+        <h1 class="app-title">Goodman Finances Inc.</h1>
+        <div class="app-subtitle">Household financial control system</div>
+      </div>
 
       <div class="tabs">
         <button class="${activeTab === "dashboard" ? "active" : ""}" onclick="setTab('dashboard')">Dashboard</button>
@@ -835,4 +1210,8 @@ function render() {
 render();
 </script>
 </body>
-</html>
+</html>'''
+
+path = Path("/mnt/data/goodman-finances-redesign-index.html")
+path.write_text(html, encoding="utf-8")
+print(f"Created {path} ({path.stat().st_size:,} bytes)")
