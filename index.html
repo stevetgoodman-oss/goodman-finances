@@ -613,7 +613,7 @@ const budgetStartDate = "2026-05-01";
   Never paste your service_role key here.
 */
 const SUPABASE_URL = "https://lfqumpuhmirkahjexwyk.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmcXVtcHVobWlya2FoamV4d3lrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0MDIzOTYsImV4cCI6MjA5Mjk3ODM5Nn0.4zhe2_tsS7Hgp31flXxHZ7f4SGbU653HVYftq6TRw5E";
+const SUPABASE_ANON_KEY = "PASTE_YOUR_ANON_PUBLIC_KEY_HERE";
 
 let activeTab = "wealth";
 let viewMode = "monthly";
@@ -1112,13 +1112,13 @@ function addTransaction(e) {
   save();
 }
 
-function deleteTransaction(id) {
-  transactions = transactions.filter(t => t.id !== id);
-  save();
+async function deleteTransaction(id) {
+  transactions = transactions.filter(t => String(t.id) !== String(id));
+  await save();
 }
 
 function editTransaction(id) {
-  editingId = id;
+  editingId = String(id);
   render();
 }
 
@@ -1139,7 +1139,7 @@ function updateEditSubCategories(parentValue) {
 function saveEditedTransaction(e) {
   e.preventDefault();
 
-  const t = transactions.find(tx => tx.id === editingId);
+  const t = transactions.find(tx => String(tx.id) === String(editingId));
   if (!t) return;
 
   const form = e.target;
@@ -1171,7 +1171,7 @@ function saveEditedTransaction(e) {
 function renderEditModal() {
   if (editingId === null) return "";
 
-  const t = transactions.find(tx => tx.id === editingId);
+  const t = transactions.find(tx => String(tx.id) === String(editingId));
   if (!t) return "";
 
   const parentOptions = Object.keys(categoryModel)
@@ -1958,8 +1958,8 @@ function renderTransactionHistory() {
         <div>
           <strong>${t.amount < 0 ? "-" : "+"}${dollarsExact(Math.abs(t.amount))}</strong>
           <div class="transaction-actions">
-            <button onclick="editTransaction(${t.id})">Edit</button>
-            <button onclick="deleteTransaction(${t.id})">Delete</button>
+            <button onclick="editTransaction('${t.id}')">Edit</button>
+            <button onclick="deleteTransaction('${t.id}')">Delete</button>
           </div>
         </div>
       </div>
