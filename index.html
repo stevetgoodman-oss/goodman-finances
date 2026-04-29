@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -597,9 +598,10 @@ const budgets = {
 
 const budgetStartDate = "2026-05-01";
 
-let activeTab = "dashboard";
+let activeTab = "wealth";
 let viewMode = "monthly";
 let editingId = null;
+let wealthEditOpen = false;
 let transactions = JSON.parse(localStorage.getItem("transactions") || "[]");
 
 const defaultWealth = {
@@ -723,6 +725,11 @@ function setTab(tab) {
 
 function setViewMode(mode) {
   viewMode = mode;
+  render();
+}
+
+function setWealthEditOpen(isOpen) {
+  wealthEditOpen = isOpen;
   render();
 }
 
@@ -1311,6 +1318,17 @@ function getWealthSummary() {
   return { baseline, current, netDelta, netDeltaPct };
 }
 
+function movementLabel(current, baseline, invert = false) {
+  const delta = current - baseline;
+  if (delta === 0) return "No movement";
+
+  if (invert) {
+    return delta < 0 ? "Improved" : "Increased";
+  }
+
+  return delta > 0 ? "Increased" : "Decreased";
+}
+
 function deltaText(current, baseline, invert = false) {
   const delta = current - baseline;
   const pct = baseline ? (delta / baseline) * 100 : 0;
@@ -1358,6 +1376,7 @@ function saveWealthSnapshot(e) {
   };
 
   wealth.lastUpdated = new Date().toISOString().slice(0, 10);
+  wealthEditOpen = false;
   saveWealth();
 }
 
@@ -1395,8 +1414,61 @@ function renderWealth() {
   const baselineTotals = summary.baseline;
   const currentTotals = summary.current;
 
+  const assetsDelta = currentTotals.assets - baselineTotals.assets;
+  const assetsDeltaPct = baselineTotals.assets ? (assetsDelta / baselineTotals.assets) * 100 : 0;
+
+  const mortgageDelta = toNumber(c.mortgage) - toNumber(b.mortgage);
+  const mortgageDeltaPct = toNumber(b.mortgage) ? (mortgageDelta / toNumber(b.mortgage)) * 100 : 0;
+
   const vgsPct = currentTotals.etfTotal ? (toNumber(c.etfVgs) / currentTotals.etfTotal) * 100 : 0;
   const vasPct = currentTotals.etfTotal ? (toNumber(c.etfVas) / currentTotals.etfTotal) * 100 : 0;
+
+  const wealthEditor = wealthEditOpen ? `
+    <section class="panel">
+      <form onsubmit="saveWealthSnapshot(event)">
+        <label class="muted">Baseline date</label>
+        <input type="date" name="baselineDate" value="${wealth.baselineDate}" required />
+
+        <h2>Baseline</h2>
+        <div class="wealth-form-grid">
+          <label>Property<input name="baselineProperty" type="number" step="1" value="${b.property}" /></label>
+          <label>Steve super<input name="baselineSuperSteve" type="number" step="1" value="${b.superSteve}" /></label>
+          <label>Lou super<input name="baselineSuperLou" type="number" step="1" value="${b.superLou}" /></label>
+          <label>VGS<input name="baselineEtfVgs" type="number" step="1" value="${b.etfVgs}" /></label>
+          <label>VAS<input name="baselineEtfVas" type="number" step="1" value="${b.etfVas}" /></label>
+          <label>Cash / savings<input name="baselineCash" type="number" step="1" value="${b.cash}" /></label>
+          <label>Mortgage<input name="baselineMortgage" type="number" step="1" value="${b.mortgage}" /></label>
+          <label>Redraw<input name="baselineRedraw" type="number" step="1" value="${b.redraw}" /></label>
+        </div>
+
+        <h2>Current</h2>
+        <div class="wealth-form-grid">
+          <label>Property<input name="currentProperty" type="number" step="1" value="${c.property}" /></label>
+          <label>Steve super<input name="currentSuperSteve" type="number" step="1" value="${c.superSteve}" /></label>
+          <label>Lou super<input name="currentSuperLou" type="number" step="1" value="${c.superLou}" /></label>
+          <label>VGS<input name="currentEtfVgs" type="number" step="1" value="${c.etfVgs}" /></label>
+          <label>VAS<input name="currentEtfVas" type="number" step="1" value="${c.etfVas}" /></label>
+          <label>Cash / savings<input name="currentCash" type="number" step="1" value="${c.cash}" /></label>
+          <label>Mortgage<input name="currentMortgage" type="number" step="1" value="${c.mortgage}" /></label>
+          <label>Redraw<input name="currentRedraw" type="number" step="1" value="${c.redraw}" /></label>
+        </div>
+
+        <div class="edit-actions">
+          <button type="button" class="secondary" onclick="setWealthEditOpen(false)">Cancel</button>
+          <button type="submit" class="primary">Save</button>
+        </div>
+      </form>
+      <p class="muted">After saving, this panel closes. Reopen it anytime to correct values.</p>
+    </section>
+  ` : `
+    <section class="panel">
+      <div class="metric-row">
+        <span>Last updated</span>
+        <strong>${wealth.lastUpdated || "Not set"}</strong>
+      </div>
+      <button class="primary" onclick="setWealthEditOpen(true)">Update Wealth Snapshot</button>
+    </section>
+  `;
 
   return `
     <section class="hero-card">
@@ -1404,7 +1476,7 @@ function renderWealth() {
       <div class="hero-value">${dollars(currentTotals.netWealth)}</div>
       <div class="hero-context">
         Since ${wealth.baselineDate}: 
-        <strong class="${summary.netDelta >= 0 ? "" : "bad"}">
+        <strong class="${summary.netDelta >= 0 ? "good" : "bad"}">
           ${summary.netDelta >= 0 ? "+" : "-"}${dollars(Math.abs(summary.netDelta))} (${summary.netDeltaPct >= 0 ? "+" : "-"}${Math.abs(summary.netDeltaPct).toFixed(1)}%)
         </strong>
       </div>
@@ -1412,17 +1484,23 @@ function renderWealth() {
         <div class="hero-metric">
           <span>Total assets</span>
           <strong>${dollars(currentTotals.assets)}</strong>
+          <span class="${assetsDelta >= 0 ? "good" : "bad"}">
+            ${assetsDelta >= 0 ? "+" : "-"}${dollars(Math.abs(assetsDelta))} (${assetsDeltaPct >= 0 ? "+" : "-"}${Math.abs(assetsDeltaPct).toFixed(1)}%)
+          </span>
         </div>
         <div class="hero-metric">
           <span>Mortgage balance</span>
           <strong>${dollars(c.mortgage)}</strong>
+          <span class="${mortgageDelta <= 0 ? "good" : "bad"}">
+            ${mortgageDelta <= 0 ? "-" : "+"}${dollars(Math.abs(mortgageDelta))} (${mortgageDeltaPct <= 0 ? "-" : "+"}${Math.abs(mortgageDeltaPct).toFixed(1)}%)
+          </span>
         </div>
       </div>
     </section>
 
     <div class="section-title">
       <h2>Wealth Snapshot</h2>
-      <span>Baseline vs current</span>
+      <span>Movement since ${wealth.baselineDate}</span>
     </div>
 
     <div class="wealth-grid">
@@ -1484,42 +1562,9 @@ function renderWealth() {
       <h2>Update Wealth Snapshot</h2>
       <span>Monthly ritual</span>
     </div>
-    <section class="panel">
-      <form onsubmit="saveWealthSnapshot(event)">
-        <label class="muted">Baseline date</label>
-        <input type="date" name="baselineDate" value="${wealth.baselineDate}" required />
-
-        <h2>Baseline</h2>
-        <div class="wealth-form-grid">
-          <label>Property<input name="baselineProperty" type="number" step="1" value="${b.property}" /></label>
-          <label>Steve super<input name="baselineSuperSteve" type="number" step="1" value="${b.superSteve}" /></label>
-          <label>Lou super<input name="baselineSuperLou" type="number" step="1" value="${b.superLou}" /></label>
-          <label>VGS<input name="baselineEtfVgs" type="number" step="1" value="${b.etfVgs}" /></label>
-          <label>VAS<input name="baselineEtfVas" type="number" step="1" value="${b.etfVas}" /></label>
-          <label>Cash / savings<input name="baselineCash" type="number" step="1" value="${b.cash}" /></label>
-          <label>Mortgage<input name="baselineMortgage" type="number" step="1" value="${b.mortgage}" /></label>
-          <label>Redraw<input name="baselineRedraw" type="number" step="1" value="${b.redraw}" /></label>
-        </div>
-
-        <h2>Current</h2>
-        <div class="wealth-form-grid">
-          <label>Property<input name="currentProperty" type="number" step="1" value="${c.property}" /></label>
-          <label>Steve super<input name="currentSuperSteve" type="number" step="1" value="${c.superSteve}" /></label>
-          <label>Lou super<input name="currentSuperLou" type="number" step="1" value="${c.superLou}" /></label>
-          <label>VGS<input name="currentEtfVgs" type="number" step="1" value="${c.etfVgs}" /></label>
-          <label>VAS<input name="currentEtfVas" type="number" step="1" value="${c.etfVas}" /></label>
-          <label>Cash / savings<input name="currentCash" type="number" step="1" value="${c.cash}" /></label>
-          <label>Mortgage<input name="currentMortgage" type="number" step="1" value="${c.mortgage}" /></label>
-          <label>Redraw<input name="currentRedraw" type="number" step="1" value="${c.redraw}" /></label>
-        </div>
-
-        <button class="primary">Save Wealth Snapshot</button>
-      </form>
-      <p class="muted">Last updated: ${wealth.lastUpdated || "Not set"}</p>
-    </section>
+    ${wealthEditor}
   `;
 }
-
 
 function renderDashboard() {
   const monthlySummary = getMonthlySummary();
@@ -1768,9 +1813,9 @@ function render() {
       </div>
 
       <div class="tabs">
-        <button class="${activeTab === "dashboard" ? "active" : ""}" onclick="setTab('dashboard')">Dashboard</button>
-        <button class="${activeTab === "transactions" ? "active" : ""}" onclick="setTab('transactions')">Transaction History</button>
         <button class="${activeTab === "wealth" ? "active" : ""}" onclick="setTab('wealth')">Wealth</button>
+        <button class="${activeTab === "dashboard" ? "active" : ""}" onclick="setTab('dashboard')">Budget Tracker</button>
+        <button class="${activeTab === "transactions" ? "active" : ""}" onclick="setTab('transactions')">Transaction History</button>
       </div>
 
       ${
