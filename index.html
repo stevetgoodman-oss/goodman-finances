@@ -740,9 +740,6 @@ async function syncTransactionsToSupabase() {
       body: JSON.stringify(rows)
     });
 
-    await supabaseFetch(`transactions?id=not.in.(${ids.join(",")})`, {
-      method: "DELETE"
-    });
   } else {
     await supabaseFetch("transactions", {
       method: "DELETE"
@@ -1113,8 +1110,24 @@ function addTransaction(e) {
 }
 
 async function deleteTransaction(id) {
-  transactions = transactions.filter(t => String(t.id) !== String(id));
-  await save();
+  const idString = String(id);
+
+  transactions = transactions.filter(t => String(t.id) !== idString);
+  localStorage.setItem("transactions", JSON.stringify(transactions));
+  render();
+
+  try {
+    if (isSupabaseConfigured() && isUuid(idString)) {
+      await supabaseFetch(`transactions?id=eq.${encodeURIComponent(idString)}`, {
+        method: "DELETE"
+      });
+    } else {
+      await syncTransactionsToSupabase();
+    }
+  } catch (error) {
+    console.error(error);
+    alert("Could not delete transaction from Supabase. Refresh the app to confirm whether the transaction still exists in shared data.");
+  }
 }
 
 function editTransaction(id) {
