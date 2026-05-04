@@ -607,13 +607,22 @@ const budgets = {
 
 const budgetStartDate = "2026-05-01";
 
+const expectedIncome = {
+  steveMonthly: 10450,
+  louFortnightly: 3040
+};
+
+const expectedMonthlyIncome =
+  expectedIncome.steveMonthly +
+  (expectedIncome.louFortnightly * 26 / 12);
+
 /*
   Supabase shared data setup:
   Paste your anon public key below.
   Never paste your service_role key here.
 */
 const SUPABASE_URL = "https://lfqumpuhmirkahjexwyk.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmcXVtcHVobWlya2FoamV4d3lrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0MDIzOTYsImV4cCI6MjA5Mjk3ODM5Nn0.4zhe2_tsS7Hgp31flXxHZ7f4SGbU653HVYftq6TRw5E";
+const SUPABASE_ANON_KEY = "PASTE_YOUR_ANON_PUBLIC_KEY_HERE";
 
 let activeTab = "wealth";
 let viewMode = "monthly";
@@ -661,7 +670,7 @@ function isSupabaseConfigured() {
   return (
     SUPABASE_URL &&
     SUPABASE_ANON_KEY &&
-    !SUPABASE_ANON_KEY.includes("PASTE_YOUR_ANON")
+    !SUPABASE_ANON_KEY.includes("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmcXVtcHVobWlya2FoamV4d3lrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0MDIzOTYsImV4cCI6MjA5Mjk3ODM5Nn0.4zhe2_tsS7Hgp31flXxHZ7f4SGbU653HVYftq6TRw5E")
   );
 }
 
@@ -1792,11 +1801,30 @@ function renderDashboard() {
   const needsReviewCount = needsReview.length;
   const needsReviewTotal = needsReview.reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
+  const monthlyBudgetTotal = Object.values(budgets).reduce((sum, amount) => sum + amount, 0);
+  const mortgageBudget = budgets["Mortgage"] || 0;
+  const nonMortgageBudgetTotal = monthlyBudgetTotal - mortgageBudget;
+  const expectedMonthlySurplus = expectedMonthlyIncome - monthlyBudgetTotal;
+  const expectedAvailableAfterMortgage = expectedMonthlyIncome - mortgageBudget;
+  const expectedIncomeReceivedPct = expectedMonthlyIncome ? Math.min((monthlySummary.income / expectedMonthlyIncome) * 100, 100) : 0;
+  const today = new Date();
+  const budgetStart = new Date(budgetStartDate);
+  const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const currentMonthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  const daysInCurrentMonth = currentMonthEnd.getDate();
+  const accrualStart = budgetStart > currentMonthStart ? budgetStart : currentMonthStart;
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const daysElapsedThisMonth = today < accrualStart
+    ? 0
+    : Math.floor((today - accrualStart) / msPerDay) + 1;
+  const budgetAccruedToDate = monthlyBudgetTotal * (daysElapsedThisMonth / daysInCurrentMonth);
+  const spendVsPlanBalance = budgetAccruedToDate - monthlySummary.expenses;
+
   const activeTotals = viewMode === "monthly" ? monthlyParentTotals : accrualParentTotals;
   const activeTitle = viewMode === "monthly" ? "This Month vs Budget" : "Accrual Balance by Category";
-  const activeSubtitle = viewMode === "monthly" ? "Cash awareness" : "Accrual truth";
+  const activeSubtitle = viewMode === "monthly" ? "Month-to-date control" : "Accrual truth";
   const activeNote = viewMode === "monthly"
-    ? "Monthly mode shows short-term cash control and uses “remaining” language."
+    ? "Monthly mode compares actual spend against the budget accrued so far this month."
     : "Accrual mode smooths annual, quarterly and uneven bills from the budget start date.";
 
   let biggestDriver = "No spending yet";
@@ -1882,13 +1910,13 @@ function renderDashboard() {
 
   return `
     <section class="hero-card">
-      <div class="hero-label">Financial position</div>
+      <div class="hero-label">${viewMode === "monthly" ? "Tracking vs plan" : "Financial position"}</div>
       <div class="hero-value">
         ${
           viewMode === "monthly"
-            ? monthlySummary.surplus >= 0
-              ? dollars(monthlySummary.surplus) + " remaining"
-              : dollars(Math.abs(monthlySummary.surplus)) + " over"
+            ? spendVsPlanBalance >= 0
+              ? dollars(spendVsPlanBalance) + " under plan"
+              : dollars(Math.abs(spendVsPlanBalance)) + " over plan"
             : accrualSummary.balance >= 0
               ? dollars(accrualSummary.balance) + " ahead"
               : dollars(Math.abs(accrualSummary.balance)) + " behind"
@@ -1900,8 +1928,16 @@ function renderDashboard() {
       </div>
       <div class="hero-grid">
         <div class="hero-metric">
-          <span>Cash surplus this month</span>
-          <strong>${dollars(monthlySummary.surplus)}</strong>
+          <span>${viewMode === "monthly" ? "Budget accrued to date" : "Budget accrued"}</span>
+          <strong>${viewMode === "monthly" ? dollars(budgetAccruedToDate) : dollars(accrualSummary.totalBudgetAccrued)}</strong>
+        </div>
+        <div class="hero-metric">
+          <span>${viewMode === "monthly" ? "Spend to date" : "Actual spend"}</span>
+          <strong>${viewMode === "monthly" ? dollars(monthlySummary.expenses) : dollars(accrualSummary.totalActualSpent)}</strong>
+        </div>
+        <div class="hero-metric">
+          <span>Expected monthly surplus</span>
+          <strong>${dollars(expectedMonthlySurplus)}</strong>
         </div>
       </div>
     </section>
@@ -1920,12 +1956,25 @@ function renderDashboard() {
 
     <div class="section-title">
       <h2>This Month Cash View</h2>
-      <span>From ${budgetStartDate}</span>
+      <span>Income timing is separate from spend tracking</span>
     </div>
     <section class="summary">
-      <div class="metric-row"><span>Income</span><strong>${dollars(monthlySummary.income)}</strong></div>
-      <div class="metric-row"><span>Expenses</span><strong>${dollars(monthlySummary.expenses)}</strong></div>
-      <div class="metric-row total"><span>Cash surplus this month</span><strong>${dollars(monthlySummary.surplus)}</strong></div>
+      <p class="muted">Expected income reflects Steve monthly pay and Lou fortnightly pay normalised to a monthly figure. Mortgage is included in total outflows, but shown separately because it is a structural commitment.</p>
+
+      <div class="metric-row"><span>Expected income this month</span><strong>${dollars(expectedMonthlyIncome)}</strong></div>
+      <div class="metric-row"><span>Income received so far</span><strong>${dollars(monthlySummary.income)}</strong></div>
+      <div class="progress">
+        <div class="progress-fill" style="width:${expectedIncomeReceivedPct}%"></div>
+      </div>
+
+      <div class="metric-row"><span>Mortgage / structural housing</span><strong>${dollars(mortgageBudget)}</strong></div>
+      <div class="metric-row"><span>Available after mortgage</span><strong>${dollars(expectedAvailableAfterMortgage)}</strong></div>
+      <div class="metric-row"><span>Other expected monthly expenses</span><strong>${dollars(nonMortgageBudgetTotal)}</strong></div>
+      <div class="metric-row total"><span>Total expected outflows</span><strong>${dollars(monthlyBudgetTotal)}</strong></div>
+
+      <div class="metric-row"><span>Expenses paid so far</span><strong>${dollars(monthlySummary.expenses)}</strong></div>
+      <div class="metric-row total"><span>Expected monthly surplus</span><strong class="${expectedMonthlySurplus >= 0 ? "good" : "bad"}">${dollars(expectedMonthlySurplus)}</strong></div>
+      <div class="metric-row"><span>Actual cash position so far</span><strong class="${monthlySummary.surplus >= 0 ? "good" : "bad"}">${dollars(monthlySummary.surplus)}</strong></div>
     </section>
 
     <div class="section-title">
