@@ -617,6 +617,39 @@ const expectedMonthlyIncome =
   expectedIncome.steveMonthly +
   (expectedIncome.louFortnightly * 26 / 12);
 
+const mortgageSchedule = [
+  { date: "2026-05-05", amount: 3040.56 },
+  { date: "2026-05-19", amount: 3040.56 },
+  { date: "2026-06-02", amount: 3040.56 },
+  { date: "2026-06-16", amount: 3040.56 },
+  { date: "2026-06-30", amount: 3040.56 },
+  { date: "2026-07-14", amount: 3040.56 },
+  { date: "2026-07-28", amount: 3040.56 },
+  { date: "2026-08-11", amount: 3040.56 },
+  { date: "2026-08-25", amount: 3040.56 },
+  { date: "2026-09-08", amount: 3040.56 },
+  { date: "2026-09-22", amount: 3040.56 },
+  { date: "2026-10-06", amount: 3040.56 },
+  { date: "2026-10-20", amount: 3040.56 },
+  { date: "2026-11-03", amount: 3040.56 },
+  { date: "2026-11-17", amount: 3040.56 },
+  { date: "2026-12-01", amount: 3040.56 },
+  { date: "2026-12-15", amount: 3040.56 },
+  { date: "2026-12-29", amount: 3040.56 },
+  { date: "2027-01-12", amount: 3040.56 },
+  { date: "2027-01-26", amount: 3040.56 },
+  { date: "2027-02-09", amount: 3040.56 },
+  { date: "2027-02-23", amount: 3040.56 },
+  { date: "2027-03-09", amount: 3040.56 },
+  { date: "2027-03-23", amount: 3040.56 },
+  { date: "2027-04-06", amount: 3040.56 },
+  { date: "2027-04-20", amount: 3040.56 },
+  { date: "2027-05-04", amount: 3040.56 },
+  { date: "2027-05-18", amount: 3040.56 },
+  { date: "2027-06-01", amount: 3040.56 },
+  { date: "2027-06-15", amount: 3040.56 }
+];
+
 /*
   Supabase shared data setup:
   Paste your anon public key below.
@@ -1792,6 +1825,44 @@ function renderWealth() {
   `;
 }
 
+
+function parseLocalISODate(dateString) {
+  const [year, month, day] = String(dateString).split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function isSameMonthAndYear(dateA, dateB) {
+  return dateA.getFullYear() === dateB.getFullYear() &&
+    dateA.getMonth() === dateB.getMonth();
+}
+
+function getMortgageScheduledThisMonth(today = new Date()) {
+  return mortgageSchedule
+    .filter(payment => isSameMonthAndYear(parseLocalISODate(payment.date), today))
+    .reduce((sum, payment) => sum + payment.amount, 0);
+}
+
+function getMortgageDueToDateThisMonth(today = new Date()) {
+  return mortgageSchedule
+    .filter(payment => {
+      const paymentDate = parseLocalISODate(payment.date);
+      return isSameMonthAndYear(paymentDate, today) && paymentDate <= today;
+    })
+    .reduce((sum, payment) => sum + payment.amount, 0);
+}
+
+function getNextMortgagePayment(today = new Date()) {
+  return mortgageSchedule
+    .map(payment => ({ ...payment, parsedDate: parseLocalISODate(payment.date) }))
+    .filter(payment => payment.parsedDate >= today)
+    .sort((a, b) => a.parsedDate - b.parsedDate)[0] || null;
+}
+
+function formatShortDate(dateString) {
+  const date = parseLocalISODate(dateString);
+  return date.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+}
+
 function renderDashboard() {
   const monthlySummary = getMonthlySummary();
   const accrualSummary = getAccrualSummary();
@@ -1803,11 +1874,8 @@ function renderDashboard() {
   const needsReviewTotal = needsReview.reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
   const monthlyBudgetTotal = Object.values(budgets).reduce((sum, amount) => sum + amount, 0);
-  const mortgageBudget = budgets["Mortgage"] || 0;
-  const nonMortgageBudgetTotal = monthlyBudgetTotal - mortgageBudget;
-  const expectedMonthlySurplus = expectedMonthlyIncome - monthlyBudgetTotal;
-  const expectedAvailableAfterMortgage = expectedMonthlyIncome - mortgageBudget;
-  const expectedIncomeReceivedPct = expectedMonthlyIncome ? Math.min((monthlySummary.income / expectedMonthlyIncome) * 100, 100) : 0;
+  const smoothedMortgageBudget = budgets["Mortgage"] || 0;
+  const nonMortgageBudgetTotal = monthlyBudgetTotal - smoothedMortgageBudget;
   const today = new Date();
   const budgetStart = new Date(budgetStartDate);
   const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -1818,14 +1886,23 @@ function renderDashboard() {
   const daysElapsedThisMonth = today < accrualStart
     ? 0
     : Math.floor((today - accrualStart) / msPerDay) + 1;
-  const budgetAccruedToDate = monthlyBudgetTotal * (daysElapsedThisMonth / daysInCurrentMonth);
+
+  const nonMortgageBudgetAccruedToDate = nonMortgageBudgetTotal * (daysElapsedThisMonth / daysInCurrentMonth);
+  const mortgageDueToDateThisMonth = getMortgageDueToDateThisMonth(today);
+  const mortgageScheduledThisMonth = getMortgageScheduledThisMonth(today);
+  const nextMortgagePayment = getNextMortgagePayment(today);
+  const budgetAccruedToDate = nonMortgageBudgetAccruedToDate + mortgageDueToDateThisMonth;
+  const scheduledMonthlyOutflows = nonMortgageBudgetTotal + mortgageScheduledThisMonth;
+  const expectedMonthlySurplus = expectedMonthlyIncome - scheduledMonthlyOutflows;
+  const expectedAvailableAfterMortgage = expectedMonthlyIncome - mortgageScheduledThisMonth;
+  const expectedIncomeReceivedPct = expectedMonthlyIncome ? Math.min((monthlySummary.income / expectedMonthlyIncome) * 100, 100) : 0;
   const spendVsPlanBalance = budgetAccruedToDate - monthlySummary.expenses;
 
   const activeTotals = viewMode === "monthly" ? monthlyParentTotals : accrualParentTotals;
   const activeTitle = viewMode === "monthly" ? "This Month vs Budget" : "Accrual Balance by Category";
   const activeSubtitle = viewMode === "monthly" ? "Month-to-date control" : "Accrual truth";
   const activeNote = viewMode === "monthly"
-    ? "Monthly mode compares actual spend against the budget accrued so far this month."
+    ? "Monthly mode compares actual spend against the plan so far. Mortgage is counted only when scheduled repayments are due."
     : "Accrual mode smooths annual, quarterly and uneven bills from the budget start date.";
 
   let biggestDriver = "No spending yet";
@@ -1861,19 +1938,55 @@ function renderDashboard() {
 
   const categoryRows = Object.keys(budgets).map(parent => {
     const monthlyBudget = budgets[parent];
-    const comparisonBudget = viewMode === "monthly" ? monthlyBudget : monthlyBudget * monthsElapsed;
+    const isMonthlyMortgage = viewMode === "monthly" && parent === "Mortgage";
+
+    const comparisonBudget = viewMode === "monthly"
+      ? isMonthlyMortgage
+        ? mortgageDueToDateThisMonth
+        : monthlyBudget
+      : monthlyBudget * monthsElapsed;
+
     const actual = activeTotals[parent] || 0;
-    const resultText = getCategoryResultText(parent, actual, comparisonBudget, viewMode);
-    const resultClass = getCategoryResultClass(parent, actual, comparisonBudget);
-    const status = getCategoryStatus(actual, comparisonBudget || monthlyBudget, parent);
+
+    let resultText = getCategoryResultText(parent, actual, comparisonBudget, viewMode);
+    let resultClass = getCategoryResultClass(parent, actual, comparisonBudget);
+    let status = getCategoryStatus(actual, comparisonBudget || monthlyBudget, parent);
+
+    if (isMonthlyMortgage) {
+      const difference = comparisonBudget - actual;
+
+      if (comparisonBudget === 0 && actual === 0) {
+        resultText = "No payment due yet";
+        resultClass = "good";
+        status = { label: "On track", cls: "status-good", fill: "progress-fill", pct: 0 };
+      } else if (difference <= 0) {
+        resultText = difference === 0 ? "On track" : dollars(Math.abs(difference)) + " ahead";
+        resultClass = "good";
+        status = { label: "On track", cls: "status-good", fill: "progress-fill", pct: 100 };
+      } else {
+        resultText = dollars(difference) + " due";
+        resultClass = "bad";
+        status = {
+          label: "Payment due",
+          cls: "status-bad",
+          fill: "progress-fill bad",
+          pct: comparisonBudget ? Math.min((actual / comparisonBudget) * 100, 100) : 0
+        };
+      }
+    }
+
     const subTotals = getSubTotals(parent, viewMode === "monthly" ? "month" : "accrual");
 
     const topSubText = viewMode === "monthly"
-      ? `${dollars(actual)} of ${dollars(monthlyBudget)} used`
+      ? isMonthlyMortgage
+        ? `${dollars(actual)} paid · ${dollars(comparisonBudget)} due so far`
+        : `${dollars(actual)} of ${dollars(monthlyBudget)} used`
       : `Accrued ${dollars(comparisonBudget)} · Spent ${dollars(actual)}`;
 
     const detailLine = viewMode === "monthly"
-      ? `Monthly budget: ${dollars(monthlyBudget)} · Actual: ${dollars(actual)}`
+      ? isMonthlyMortgage
+        ? `Scheduled this month: ${dollars(mortgageScheduledThisMonth)} · Due so far: ${dollars(mortgageDueToDateThisMonth)}`
+        : `Monthly budget: ${dollars(monthlyBudget)} · Actual: ${dollars(actual)}`
       : `Monthly accrual: ${dollars(monthlyBudget)} · Months elapsed: ${monthsElapsed}`;
 
     const emptyText = viewMode === "monthly"
@@ -1964,7 +2077,7 @@ function renderDashboard() {
       <span>Income timing is separate from spend tracking</span>
     </div>
     <section class="summary">
-      <p class="muted">Expected income reflects Steve monthly pay and Lou fortnightly pay normalised to a monthly figure. Mortgage is included in total outflows, but shown separately because it is a structural commitment.</p>
+      <p class="muted">Expected income reflects Steve monthly pay and Lou fortnightly pay normalised to a monthly figure. Mortgage is based on the repayment schedule, not daily accrual.</p>
 
       <div class="metric-row"><span>Expected income this month</span><strong>${dollars(expectedMonthlyIncome)}</strong></div>
       <div class="metric-row"><span>Income received so far</span><strong>${dollars(monthlySummary.income)}</strong></div>
@@ -1972,10 +2085,12 @@ function renderDashboard() {
         <div class="progress-fill" style="width:${expectedIncomeReceivedPct}%"></div>
       </div>
 
-      <div class="metric-row"><span>Mortgage / structural housing</span><strong>${dollars(mortgageBudget)}</strong></div>
+      <div class="metric-row"><span>Mortgage scheduled this month</span><strong>${dollars(mortgageScheduledThisMonth)}</strong></div>
+      <div class="metric-row"><span>Mortgage due so far</span><strong>${dollars(mortgageDueToDateThisMonth)}</strong></div>
+      <div class="metric-row"><span>Next mortgage payment</span><strong>${nextMortgagePayment ? formatShortDate(nextMortgagePayment.date) + " · " + dollars(nextMortgagePayment.amount) : "Not scheduled"}</strong></div>
       <div class="metric-row"><span>Available after mortgage</span><strong>${dollars(expectedAvailableAfterMortgage)}</strong></div>
       <div class="metric-row"><span>Other expected monthly expenses</span><strong>${dollars(nonMortgageBudgetTotal)}</strong></div>
-      <div class="metric-row total"><span>Total expected outflows</span><strong>${dollars(monthlyBudgetTotal)}</strong></div>
+      <div class="metric-row total"><span>Total scheduled outflows</span><strong>${dollars(scheduledMonthlyOutflows)}</strong></div>
 
       <div class="metric-row"><span>Expenses paid so far</span><strong>${dollars(monthlySummary.expenses)}</strong></div>
       <div class="metric-row total"><span>Expected monthly surplus</span><strong class="${expectedMonthlySurplus >= 0 ? "good" : "bad"}">${dollars(expectedMonthlySurplus)}</strong></div>
@@ -2093,7 +2208,7 @@ function render() {
     <main>
       <div class="app-header">
         <h1 class="app-title">Goodman Finances Inc.</h1>
-        <div class="app-subtitle">Household financial control system · v15</div>
+        <div class="app-subtitle">Household financial control system · v17</div>
       </div>
 
       <div class="tabs">
