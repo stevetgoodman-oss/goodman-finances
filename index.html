@@ -557,6 +557,98 @@ button.secondary {
 }
 
 
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.settings-card {
+  background: white;
+  border-radius: 16px;
+  padding: 14px;
+  margin-bottom: 10px;
+  box-shadow: 0 4px 14px rgba(15,23,42,0.05);
+  border: 1px solid var(--border);
+}
+
+.settings-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.settings-card-title {
+  font-weight: 850;
+  color: var(--navy);
+}
+
+.settings-card-meta {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 4px;
+  line-height: 1.35;
+}
+
+.settings-card-amount {
+  text-align: right;
+  font-weight: 900;
+  color: var(--navy);
+  white-space: nowrap;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.inline-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.inline-toggle input {
+  width: auto;
+  margin: 0;
+}
+
+.window-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+
+.window-toggle button.active {
+  background: var(--navy);
+  color: white;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 800;
+  margin-top: 6px;
+  background: #E2E8F0;
+  color: var(--navy);
+}
+
+.badge.off {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
 .loading-card {
   background: white;
   border-radius: 18px;
@@ -609,46 +701,13 @@ const budgets = {
 const budgetStartDate = "2026-05-01";
 
 const expectedIncome = {
-  steveMonthly: 10450,
-  louFortnightly: 3040
+  steveMonthly: 10449.43,
+  louFortnightly: 3040.56
 };
 
 const expectedMonthlyIncome =
   expectedIncome.steveMonthly +
   (expectedIncome.louFortnightly * 26 / 12);
-
-const mortgageSchedule = [
-  { date: "2026-05-05", amount: 3040.56 },
-  { date: "2026-05-19", amount: 3040.56 },
-  { date: "2026-06-02", amount: 3040.56 },
-  { date: "2026-06-16", amount: 3040.56 },
-  { date: "2026-06-30", amount: 3040.56 },
-  { date: "2026-07-14", amount: 3040.56 },
-  { date: "2026-07-28", amount: 3040.56 },
-  { date: "2026-08-11", amount: 3040.56 },
-  { date: "2026-08-25", amount: 3040.56 },
-  { date: "2026-09-08", amount: 3040.56 },
-  { date: "2026-09-22", amount: 3040.56 },
-  { date: "2026-10-06", amount: 3040.56 },
-  { date: "2026-10-20", amount: 3040.56 },
-  { date: "2026-11-03", amount: 3040.56 },
-  { date: "2026-11-17", amount: 3040.56 },
-  { date: "2026-12-01", amount: 3040.56 },
-  { date: "2026-12-15", amount: 3040.56 },
-  { date: "2026-12-29", amount: 3040.56 },
-  { date: "2027-01-12", amount: 3040.56 },
-  { date: "2027-01-26", amount: 3040.56 },
-  { date: "2027-02-09", amount: 3040.56 },
-  { date: "2027-02-23", amount: 3040.56 },
-  { date: "2027-03-09", amount: 3040.56 },
-  { date: "2027-03-23", amount: 3040.56 },
-  { date: "2027-04-06", amount: 3040.56 },
-  { date: "2027-04-20", amount: 3040.56 },
-  { date: "2027-05-04", amount: 3040.56 },
-  { date: "2027-05-18", amount: 3040.56 },
-  { date: "2027-06-01", amount: 3040.56 },
-  { date: "2027-06-15", amount: 3040.56 }
-];
 
 /*
   Supabase shared data setup:
@@ -660,11 +719,29 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 let activeTab = "wealth";
 let viewMode = "monthly";
+let cashflowWindowDays = 14;
 let editingId = null;
 let wealthEditOpen = false;
+let editingObligationId = null;
+let editingMappingId = null;
 let appLoading = true;
 let appError = "";
 let transactions = [];
+let obligations = [];
+let mappings = [];
+
+const defaultObligations = [
+  {
+    id: "default-mortgage",
+    name: "Mortgage",
+    amount: 3040.56,
+    frequency: "fortnightly",
+    next_due_date: "2026-05-05",
+    parent_category: "Mortgage",
+    sub_category: "Home loan repayment",
+    active: true
+  }
+];
 
 const defaultWealth = {
   baselineDate: "2026-05-01",
@@ -763,6 +840,150 @@ async function supabaseFetch(path, options = {}) {
   return body ? JSON.parse(body) : null;
 }
 
+function dbObligationRow(o) {
+  return {
+    id: isUuid(o.id) ? o.id : undefined,
+    name: o.name,
+    amount: Number(o.amount || 0),
+    frequency: o.frequency,
+    next_due_date: o.next_due_date,
+    parent_category: o.parent_category,
+    sub_category: o.sub_category,
+    active: !!o.active
+  };
+}
+
+function dbMappingRow(m) {
+  return {
+    id: isUuid(m.id) ? m.id : undefined,
+    pattern: normaliseText(m.pattern),
+    parent_category: m.parent_category,
+    sub_category: m.sub_category,
+    active: !!m.active
+  };
+}
+
+async function fetchConfigTables() {
+  if (!isSupabaseConfigured()) return;
+
+  const obligationRows = await supabaseFetch("scheduled_obligations?select=*&order=next_due_date.asc");
+  obligations = (obligationRows || []).map(row => ({
+    id: row.id,
+    name: row.name,
+    amount: Number(row.amount || 0),
+    frequency: row.frequency,
+    next_due_date: row.next_due_date,
+    parent_category: row.parent_category,
+    sub_category: row.sub_category,
+    active: !!row.active
+  }));
+
+  if (!obligations.length) {
+    obligations = defaultObligations.map(o => ({ ...o, id: uuid() }));
+    await syncObligationsToSupabase();
+  }
+
+  const mappingRows = await supabaseFetch("transaction_mappings?select=*&order=created_at.asc");
+  mappings = (mappingRows || []).map(row => ({
+    id: row.id,
+    pattern: row.pattern,
+    parent_category: row.parent_category,
+    sub_category: row.sub_category,
+    active: !!row.active
+  }));
+}
+
+async function syncObligationsToSupabase() {
+  localStorage.setItem("obligations", JSON.stringify(obligations));
+
+  if (!isSupabaseConfigured()) return;
+
+  const rows = obligations.map(dbObligationRow).map(row => {
+    if (!row.id) row.id = uuid();
+    return row;
+  });
+
+  if (rows.length) {
+    await supabaseFetch("scheduled_obligations?on_conflict=id", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(rows)
+    });
+  }
+}
+
+async function syncMappingsToSupabase() {
+  localStorage.setItem("transaction_mappings", JSON.stringify(mappings));
+
+  if (!isSupabaseConfigured()) return;
+
+  const rows = mappings.map(dbMappingRow).map(row => {
+    if (!row.id) row.id = uuid();
+    return row;
+  });
+
+  if (rows.length) {
+    await supabaseFetch("transaction_mappings?on_conflict=id", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(rows)
+    });
+  }
+}
+
+async function saveObligation(obligation) {
+  const existingIndex = obligations.findIndex(o => String(o.id) === String(obligation.id));
+  if (existingIndex >= 0) {
+    obligations[existingIndex] = obligation;
+  } else {
+    obligations.push(obligation);
+  }
+
+  await syncObligationsToSupabase();
+  render();
+}
+
+async function deleteObligation(id) {
+  const idString = String(id);
+  obligations = obligations.filter(o => String(o.id) !== idString);
+  localStorage.setItem("obligations", JSON.stringify(obligations));
+  render();
+
+  if (isSupabaseConfigured() && isUuid(idString)) {
+    await supabaseFetch(`scheduled_obligations?id=eq.${encodeURIComponent(idString)}`, {
+      method: "DELETE"
+    });
+  }
+}
+
+async function saveMapping(mapping) {
+  mapping.pattern = normaliseText(mapping.pattern);
+
+  const existingIndex = mappings.findIndex(m => String(m.id) === String(mapping.id));
+  if (existingIndex >= 0) {
+    mappings[existingIndex] = mapping;
+  } else {
+    mappings.push(mapping);
+  }
+
+  await syncMappingsToSupabase();
+  render();
+}
+
+async function deleteMapping(id) {
+  const idString = String(id);
+  mappings = mappings.filter(m => String(m.id) !== idString);
+  localStorage.setItem("transaction_mappings", JSON.stringify(mappings));
+  render();
+
+  if (isSupabaseConfigured() && isUuid(idString)) {
+    await supabaseFetch(`transaction_mappings?id=eq.${encodeURIComponent(idString)}`, {
+      method: "DELETE"
+    });
+  }
+}
+
+
 async function syncTransactionsToSupabase() {
   if (!isSupabaseConfigured()) {
     localStorage.setItem("transactions", JSON.stringify(transactions));
@@ -798,6 +1019,8 @@ async function loadSharedData() {
   try {
     if (!isSupabaseConfigured()) {
       transactions = JSON.parse(localStorage.getItem("transactions") || "[]");
+      obligations = JSON.parse(localStorage.getItem("obligations") || JSON.stringify(defaultObligations));
+      mappings = JSON.parse(localStorage.getItem("transaction_mappings") || "[]");
       wealth = JSON.parse(localStorage.getItem("wealth") || JSON.stringify(defaultWealth));
       wealth = {
         ...defaultWealth,
@@ -809,6 +1032,8 @@ async function loadSharedData() {
       render();
       return;
     }
+
+    await fetchConfigTables();
 
     const txRows = await supabaseFetch("transactions?select=*&order=date.desc");
     transactions = (txRows || []).map(row => ({
@@ -938,6 +1163,11 @@ const categoryBehaviour = {
   "Utilities / Personal": "spend",
   "Buffer / Price Increases": "spend"
 };
+
+function setCashflowWindow(days) {
+  cashflowWindowDays = days;
+  render();
+}
 
 function setTab(tab) {
   activeTab = tab;
@@ -1192,7 +1422,7 @@ function updateEditSubCategories(parentValue) {
     .join("");
 }
 
-function saveEditedTransaction(e) {
+async function saveEditedTransaction(e) {
   e.preventDefault();
 
   const t = transactions.find(tx => String(tx.id) === String(editingId));
@@ -1220,8 +1450,18 @@ function saveEditedTransaction(e) {
     t.type = "expense";
   }
 
+  if (form.rememberMapping && form.rememberMapping.checked && form.mappingPattern.value.trim()) {
+    await saveMapping({
+      id: uuid(),
+      pattern: form.mappingPattern.value.trim(),
+      parent_category: parent,
+      sub_category: form.sub.value,
+      active: true
+    });
+  }
+
   editingId = null;
-  save();
+  await save();
 }
 
 function renderEditModal() {
@@ -1257,6 +1497,12 @@ function renderEditModal() {
           </select>
 
           <input type="text" name="note" value="${String(t.note || "").replace(/"/g, "&quot;")}" placeholder="Note / merchant" />
+
+          <label class="inline-toggle">
+            <input type="checkbox" name="rememberMapping" />
+            Remember this mapping for future imports
+          </label>
+          <input type="text" name="mappingPattern" value="${normaliseText(t.note).slice(0, 40).replace(/"/g, "&quot;")}" placeholder="Pattern to remember, e.g. NETFLIX" />
 
           <div class="edit-actions">
             <button type="button" class="secondary" onclick="cancelEdit()">Cancel</button>
@@ -1345,6 +1591,20 @@ function classifyTransaction(description, amount) {
     d.includes("HOME LOAN TRANSFER")
   ) {
     return { type: "ignored", parent: "Ignored", sub: "Internal Transfer", hidden: true };
+  }
+
+
+  const learnedRule = mappings
+    .filter(rule => rule.active !== false && rule.pattern)
+    .find(rule => d.includes(normaliseText(rule.pattern)));
+
+  if (learnedRule) {
+    return {
+      type: learnedRule.parent_category === "Income" ? "income" : "expense",
+      parent: learnedRule.parent_category,
+      sub: learnedRule.sub_category,
+      hidden: false
+    };
   }
 
   if (d.includes("HOME LOAN PYMT") || d.includes("MORTGAGE")) {
@@ -1831,36 +2091,151 @@ function parseLocalISODate(dateString) {
   return new Date(year, month - 1, day);
 }
 
+function toISODateLocal(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function addDays(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function addMonths(date, months) {
+  const d = new Date(date);
+  const targetDay = d.getDate();
+  d.setMonth(d.getMonth() + months);
+
+  if (d.getDate() !== targetDay) {
+    d.setDate(0);
+  }
+
+  return d;
+}
+
+function getNextOccurrenceDate(date, frequency) {
+  const f = String(frequency || "").toLowerCase();
+
+  if (f === "weekly") return addDays(date, 7);
+  if (f === "fortnightly") return addDays(date, 14);
+  if (f === "monthly") return addMonths(date, 1);
+  if (f === "quarterly") return addMonths(date, 3);
+  if (f === "annually") return addMonths(date, 12);
+
+  return addMonths(date, 1);
+}
+
 function isSameMonthAndYear(dateA, dateB) {
   return dateA.getFullYear() === dateB.getFullYear() &&
     dateA.getMonth() === dateB.getMonth();
 }
 
-function getMortgageScheduledThisMonth(today = new Date()) {
-  return mortgageSchedule
-    .filter(payment => isSameMonthAndYear(parseLocalISODate(payment.date), today))
-    .reduce((sum, payment) => sum + payment.amount, 0);
+function getActiveObligations() {
+  return obligations.filter(o => o.active !== false);
 }
 
-function getMortgageDueToDateThisMonth(today = new Date()) {
-  return mortgageSchedule
-    .filter(payment => {
-      const paymentDate = parseLocalISODate(payment.date);
-      return isSameMonthAndYear(paymentDate, today) && paymentDate <= today;
-    })
-    .reduce((sum, payment) => sum + payment.amount, 0);
+function expandObligationOccurrences(startDate, endDate) {
+  const occurrences = [];
+
+  getActiveObligations().forEach(obligation => {
+    let occurrenceDate = parseLocalISODate(obligation.next_due_date);
+    let guard = 0;
+
+    while (occurrenceDate < startDate && guard < 200) {
+      occurrenceDate = getNextOccurrenceDate(occurrenceDate, obligation.frequency);
+      guard++;
+    }
+
+    while (occurrenceDate <= endDate && guard < 300) {
+      occurrences.push({
+        ...obligation,
+        occurrence_date: toISODateLocal(occurrenceDate),
+        occurrenceDate
+      });
+
+      occurrenceDate = getNextOccurrenceDate(occurrenceDate, obligation.frequency);
+      guard++;
+    }
+  });
+
+  return occurrences.sort((a, b) => a.occurrenceDate - b.occurrenceDate);
 }
 
-function getNextMortgagePayment(today = new Date()) {
-  return mortgageSchedule
-    .map(payment => ({ ...payment, parsedDate: parseLocalISODate(payment.date) }))
-    .filter(payment => payment.parsedDate >= today)
-    .sort((a, b) => a.parsedDate - b.parsedDate)[0] || null;
+function getObligationsDueToDateThisMonth(today = new Date()) {
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  return expandObligationOccurrences(monthStart, today);
+}
+
+function getObligationsScheduledThisMonth(today = new Date()) {
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  return expandObligationOccurrences(monthStart, monthEnd);
+}
+
+function getUpcomingObligations(days = 14, today = new Date()) {
+  const endDate = addDays(today, days);
+  return expandObligationOccurrences(today, endDate);
+}
+
+function getExpectedIncomeOccurrences(days = 14, today = new Date()) {
+  const endDate = addDays(today, days);
+  const occurrences = [];
+
+  const pushMonthlyIncome = () => {
+    let d = new Date(today.getFullYear(), today.getMonth(), 14);
+    if (d < today) d = addMonths(d, 1);
+
+    while (d <= endDate) {
+      occurrences.push({
+        name: "Steve salary",
+        amount: expectedIncome.steveMonthly,
+        date: toISODateLocal(d),
+        parsedDate: new Date(d)
+      });
+      d = addMonths(d, 1);
+    }
+  };
+
+  const pushFortnightlyIncome = () => {
+    let d = parseLocalISODate("2026-05-05");
+
+    while (d < today) {
+      d = addDays(d, 14);
+    }
+
+    while (d <= endDate) {
+      occurrences.push({
+        name: "Lou salary",
+        amount: expectedIncome.louFortnightly,
+        date: toISODateLocal(d),
+        parsedDate: new Date(d)
+      });
+      d = addDays(d, 14);
+    }
+  };
+
+  pushMonthlyIncome();
+  pushFortnightlyIncome();
+
+  return occurrences.sort((a, b) => a.parsedDate - b.parsedDate);
 }
 
 function formatShortDate(dateString) {
   const date = parseLocalISODate(dateString);
   return date.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+}
+
+function obligationTotal(list) {
+  return list.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+}
+
+function getScheduledCategoriesSet() {
+  const set = new Set();
+  getActiveObligations().forEach(o => set.add(o.parent_category));
+  return set;
 }
 
 function renderDashboard() {
@@ -1874,8 +2249,6 @@ function renderDashboard() {
   const needsReviewTotal = needsReview.reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
   const monthlyBudgetTotal = Object.values(budgets).reduce((sum, amount) => sum + amount, 0);
-  const smoothedMortgageBudget = budgets["Mortgage"] || 0;
-  const nonMortgageBudgetTotal = monthlyBudgetTotal - smoothedMortgageBudget;
   const today = new Date();
   const budgetStart = new Date(budgetStartDate);
   const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -1887,22 +2260,34 @@ function renderDashboard() {
     ? 0
     : Math.floor((today - accrualStart) / msPerDay) + 1;
 
-  const nonMortgageBudgetAccruedToDate = nonMortgageBudgetTotal * (daysElapsedThisMonth / daysInCurrentMonth);
-  const mortgageDueToDateThisMonth = getMortgageDueToDateThisMonth(today);
-  const mortgageScheduledThisMonth = getMortgageScheduledThisMonth(today);
-  const nextMortgagePayment = getNextMortgagePayment(today);
-  const budgetAccruedToDate = nonMortgageBudgetAccruedToDate + mortgageDueToDateThisMonth;
-  const scheduledMonthlyOutflows = nonMortgageBudgetTotal + mortgageScheduledThisMonth;
+  const scheduledCategories = getScheduledCategoriesSet();
+  const flexibleBudgetTotal = Object.entries(budgets)
+    .filter(([parent]) => !scheduledCategories.has(parent))
+    .reduce((sum, [, amount]) => sum + amount, 0);
+  const flexibleBudgetAccruedToDate = flexibleBudgetTotal * (daysElapsedThisMonth / daysInCurrentMonth);
+  const obligationsDueThisMonth = getObligationsDueToDateThisMonth(today);
+  const obligationsScheduledThisMonth = getObligationsScheduledThisMonth(today);
+  const obligationsDueToDateTotal = obligationTotal(obligationsDueThisMonth);
+  const obligationsScheduledMonthTotal = obligationTotal(obligationsScheduledThisMonth);
+  const budgetAccruedToDate = flexibleBudgetAccruedToDate + obligationsDueToDateTotal;
+  const scheduledMonthlyOutflows = flexibleBudgetTotal + obligationsScheduledMonthTotal;
   const expectedMonthlySurplus = expectedMonthlyIncome - scheduledMonthlyOutflows;
-  const expectedAvailableAfterMortgage = expectedMonthlyIncome - mortgageScheduledThisMonth;
+  const expectedAvailableAfterObligations = expectedMonthlyIncome - obligationsScheduledMonthTotal;
   const expectedIncomeReceivedPct = expectedMonthlyIncome ? Math.min((monthlySummary.income / expectedMonthlyIncome) * 100, 100) : 0;
   const spendVsPlanBalance = budgetAccruedToDate - monthlySummary.expenses;
+
+  const upcomingObligations = getUpcomingObligations(cashflowWindowDays, today);
+  const upcomingIncome = getExpectedIncomeOccurrences(cashflowWindowDays, today);
+  const upcomingObligationsTotal = obligationTotal(upcomingObligations);
+  const upcomingIncomeTotal = obligationTotal(upcomingIncome);
+  const currentAvailableCash = getWealthTotals(wealth.current).liquidity;
+  const expectedAvailableCash = currentAvailableCash + upcomingIncomeTotal - upcomingObligationsTotal;
 
   const activeTotals = viewMode === "monthly" ? monthlyParentTotals : accrualParentTotals;
   const activeTitle = viewMode === "monthly" ? "This Month vs Budget" : "Accrual Balance by Category";
   const activeSubtitle = viewMode === "monthly" ? "Month-to-date control" : "Accrual truth";
   const activeNote = viewMode === "monthly"
-    ? "Monthly mode compares actual spend against the plan so far. Mortgage is counted only when scheduled repayments are due."
+    ? "Monthly mode compares actual spend against flexible budget accrued so far plus scheduled obligations due."
     : "Accrual mode smooths annual, quarterly and uneven bills from the budget start date.";
 
   let biggestDriver = "No spending yet";
@@ -1938,11 +2323,17 @@ function renderDashboard() {
 
   const categoryRows = Object.keys(budgets).map(parent => {
     const monthlyBudget = budgets[parent];
-    const isMonthlyMortgage = viewMode === "monthly" && parent === "Mortgage";
+    const isScheduledCategory = viewMode === "monthly" && scheduledCategories.has(parent);
+    const scheduledMonthTotalForParent = obligationsScheduledThisMonth
+      .filter(o => o.parent_category === parent)
+      .reduce((sum, o) => sum + Number(o.amount || 0), 0);
+    const scheduledDueTotalForParent = obligationsDueThisMonth
+      .filter(o => o.parent_category === parent)
+      .reduce((sum, o) => sum + Number(o.amount || 0), 0);
 
     const comparisonBudget = viewMode === "monthly"
-      ? isMonthlyMortgage
-        ? mortgageDueToDateThisMonth
+      ? isScheduledCategory
+        ? scheduledDueTotalForParent
         : monthlyBudget
       : monthlyBudget * monthsElapsed;
 
@@ -1952,11 +2343,11 @@ function renderDashboard() {
     let resultClass = getCategoryResultClass(parent, actual, comparisonBudget);
     let status = getCategoryStatus(actual, comparisonBudget || monthlyBudget, parent);
 
-    if (isMonthlyMortgage) {
+    if (isScheduledCategory) {
       const difference = comparisonBudget - actual;
 
       if (comparisonBudget === 0 && actual === 0) {
-        resultText = "No payment due yet";
+        resultText = "Nothing due yet";
         resultClass = "good";
         status = { label: "On track", cls: "status-good", fill: "progress-fill", pct: 0 };
       } else if (difference <= 0) {
@@ -1978,14 +2369,14 @@ function renderDashboard() {
     const subTotals = getSubTotals(parent, viewMode === "monthly" ? "month" : "accrual");
 
     const topSubText = viewMode === "monthly"
-      ? isMonthlyMortgage
+      ? isScheduledCategory
         ? `${dollars(actual)} paid · ${dollars(comparisonBudget)} due so far`
         : `${dollars(actual)} of ${dollars(monthlyBudget)} used`
       : `Accrued ${dollars(comparisonBudget)} · Spent ${dollars(actual)}`;
 
     const detailLine = viewMode === "monthly"
-      ? isMonthlyMortgage
-        ? `Scheduled this month: ${dollars(mortgageScheduledThisMonth)} · Due so far: ${dollars(mortgageDueToDateThisMonth)}`
+      ? isScheduledCategory
+        ? `Scheduled this month: ${dollars(scheduledMonthTotalForParent)} · Due so far: ${dollars(scheduledDueTotalForParent)}`
         : `Monthly budget: ${dollars(monthlyBudget)} · Actual: ${dollars(actual)}`
       : `Monthly accrual: ${dollars(monthlyBudget)} · Months elapsed: ${monthsElapsed}`;
 
@@ -2058,6 +2449,32 @@ function renderDashboard() {
       </div>
     </section>
 
+
+    <div class="section-title">
+      <h2>Upcoming Cashflow</h2>
+      <span>Known commitments only</span>
+    </div>
+    <section class="summary">
+      <div class="window-toggle">
+        <button class="${cashflowWindowDays === 14 ? "active" : ""}" onclick="setCashflowWindow(14)">Next 14 days</button>
+        <button class="${cashflowWindowDays === 30 ? "active" : ""}" onclick="setCashflowWindow(30)">Next 30 days</button>
+      </div>
+      <div class="metric-row"><span>Current available cash</span><strong>${dollars(currentAvailableCash)}</strong></div>
+      <div class="metric-row"><span>Expected income</span><strong class="good">+${dollars(upcomingIncomeTotal)}</strong></div>
+      <div class="metric-row"><span>Scheduled obligations</span><strong class="bad">-${dollars(upcomingObligationsTotal)}</strong></div>
+      <div class="metric-row total"><span>Available after obligations</span><strong>${dollars(expectedAvailableCash)}</strong></div>
+      <details>
+        <summary class="muted">View upcoming obligations</summary>
+        ${
+          upcomingObligations.length
+            ? upcomingObligations.slice(0, 8).map(o => `
+              <div class="sub-row"><span>${formatShortDate(o.occurrence_date)} · ${o.name}</span><strong>${dollars(o.amount)}</strong></div>
+            `).join("")
+            : `<div class="empty">No scheduled obligations in this window.</div>`
+        }
+      </details>
+    </section>
+
     ${healthCards}
 
     <div class="section-title">
@@ -2077,7 +2494,7 @@ function renderDashboard() {
       <span>Income timing is separate from spend tracking</span>
     </div>
     <section class="summary">
-      <p class="muted">Expected income reflects Steve monthly pay and Lou fortnightly pay normalised to a monthly figure. Mortgage is based on the repayment schedule, not daily accrual.</p>
+      <p class="muted">Expected income reflects Steve monthly pay and Lou fortnightly pay normalised to a monthly figure. Scheduled obligations are based on configured due dates, not daily accrual.</p>
 
       <div class="metric-row"><span>Expected income this month</span><strong>${dollars(expectedMonthlyIncome)}</strong></div>
       <div class="metric-row"><span>Income received so far</span><strong>${dollars(monthlySummary.income)}</strong></div>
@@ -2085,11 +2502,10 @@ function renderDashboard() {
         <div class="progress-fill" style="width:${expectedIncomeReceivedPct}%"></div>
       </div>
 
-      <div class="metric-row"><span>Mortgage scheduled this month</span><strong>${dollars(mortgageScheduledThisMonth)}</strong></div>
-      <div class="metric-row"><span>Mortgage due so far</span><strong>${dollars(mortgageDueToDateThisMonth)}</strong></div>
-      <div class="metric-row"><span>Next mortgage payment</span><strong>${nextMortgagePayment ? formatShortDate(nextMortgagePayment.date) + " · " + dollars(nextMortgagePayment.amount) : "Not scheduled"}</strong></div>
-      <div class="metric-row"><span>Available after mortgage</span><strong>${dollars(expectedAvailableAfterMortgage)}</strong></div>
-      <div class="metric-row"><span>Other expected monthly expenses</span><strong>${dollars(nonMortgageBudgetTotal)}</strong></div>
+      <div class="metric-row"><span>Obligations scheduled this month</span><strong>${dollars(obligationsScheduledMonthTotal)}</strong></div>
+      <div class="metric-row"><span>Obligations due so far</span><strong>${dollars(obligationsDueToDateTotal)}</strong></div>
+      <div class="metric-row"><span>Available after obligations</span><strong>${dollars(expectedAvailableAfterObligations)}</strong></div>
+      <div class="metric-row"><span>Flexible expected expenses</span><strong>${dollars(flexibleBudgetTotal)}</strong></div>
       <div class="metric-row total"><span>Total scheduled outflows</span><strong>${dollars(scheduledMonthlyOutflows)}</strong></div>
 
       <div class="metric-row"><span>Expenses paid so far</span><strong>${dollars(monthlySummary.expenses)}</strong></div>
@@ -2122,6 +2538,259 @@ function renderDashboard() {
     ${categoryRows}
   `;
 }
+
+function parentOptions(selected = "") {
+  return Object.keys(categoryModel)
+    .filter(parent => parent !== "Needs Review")
+    .map(parent => `<option value="${parent}" ${parent === selected ? "selected" : ""}>${parent}</option>`)
+    .join("");
+}
+
+function subOptions(parent, selected = "") {
+  return (categoryModel[parent] || [])
+    .map(sub => `<option value="${sub}" ${sub === selected ? "selected" : ""}>${sub}</option>`)
+    .join("");
+}
+
+function setEditingObligation(id) {
+  editingObligationId = id;
+  render();
+}
+
+function setEditingMapping(id) {
+  editingMappingId = id;
+  render();
+}
+
+function cancelSettingsEdit() {
+  editingObligationId = null;
+  editingMappingId = null;
+  render();
+}
+
+function updateObligationSubCategories(parentValue) {
+  const subSelect = document.getElementById("obligationSub");
+  if (!subSelect) return;
+  subSelect.innerHTML = subOptions(parentValue);
+}
+
+function updateMappingSubCategories(parentValue) {
+  const subSelect = document.getElementById("mappingSub");
+  if (!subSelect) return;
+  subSelect.innerHTML = subOptions(parentValue);
+}
+
+async function saveObligationFromForm(e) {
+  e.preventDefault();
+  const form = e.target;
+
+  await saveObligation({
+    id: form.id.value || uuid(),
+    name: form.name.value.trim(),
+    amount: toNumber(form.amount.value),
+    frequency: form.frequency.value,
+    next_due_date: form.next_due_date.value,
+    parent_category: form.parent_category.value,
+    sub_category: form.sub_category.value,
+    active: form.active.checked
+  });
+
+  editingObligationId = null;
+}
+
+async function saveMappingFromForm(e) {
+  e.preventDefault();
+  const form = e.target;
+
+  await saveMapping({
+    id: form.id.value || uuid(),
+    pattern: form.pattern.value.trim(),
+    parent_category: form.parent_category.value,
+    sub_category: form.sub_category.value,
+    active: form.active.checked
+  });
+
+  editingMappingId = null;
+}
+
+function renderObligationModal() {
+  if (editingObligationId === null) return "";
+
+  const existing = obligations.find(o => String(o.id) === String(editingObligationId));
+  const o = existing || {
+    id: "",
+    name: "",
+    amount: "",
+    frequency: "monthly",
+    next_due_date: toISODateLocal(new Date()),
+    parent_category: "Household",
+    sub_category: categoryModel["Household"][0],
+    active: true
+  };
+
+  return `
+    <div class="edit-overlay">
+      <div class="edit-sheet">
+        <h2>${existing ? "Edit Obligation" : "Add Obligation"}</h2>
+        <p class="muted">Scheduled obligations control when known bills are counted in the plan.</p>
+
+        <form onsubmit="saveObligationFromForm(event)">
+          <input type="hidden" name="id" value="${o.id || ""}" />
+          <input type="text" name="name" value="${String(o.name || "").replace(/"/g, "&quot;")}" placeholder="Name, e.g. Mortgage" required />
+          <input type="number" step="0.01" name="amount" value="${o.amount}" placeholder="Amount" required />
+
+          <select name="frequency" required>
+            ${["weekly", "fortnightly", "monthly", "quarterly", "annually"].map(f => `<option value="${f}" ${f === o.frequency ? "selected" : ""}>${f[0].toUpperCase() + f.slice(1)}</option>`).join("")}
+          </select>
+
+          <input type="date" name="next_due_date" value="${o.next_due_date}" required />
+
+          <select name="parent_category" id="obligationParent" onchange="updateObligationSubCategories(this.value)" required>
+            ${parentOptions(o.parent_category)}
+          </select>
+
+          <select name="sub_category" id="obligationSub" required>
+            ${subOptions(o.parent_category, o.sub_category)}
+          </select>
+
+          <label class="inline-toggle">
+            <input type="checkbox" name="active" ${o.active !== false ? "checked" : ""} />
+            Active
+          </label>
+
+          <div class="edit-actions">
+            <button type="button" class="secondary" onclick="cancelSettingsEdit()">Cancel</button>
+            <button type="submit" class="primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
+function renderMappingModal() {
+  if (editingMappingId === null) return "";
+
+  const existing = mappings.find(m => String(m.id) === String(editingMappingId));
+  const m = existing || {
+    id: "",
+    pattern: "",
+    parent_category: "Lifestyle",
+    sub_category: categoryModel["Lifestyle"][0],
+    active: true
+  };
+
+  return `
+    <div class="edit-overlay">
+      <div class="edit-sheet">
+        <h2>${existing ? "Edit Mapping Rule" : "Add Mapping Rule"}</h2>
+        <p class="muted">Mapping rules classify future imports when the description contains this pattern.</p>
+
+        <form onsubmit="saveMappingFromForm(event)">
+          <input type="hidden" name="id" value="${m.id || ""}" />
+          <input type="text" name="pattern" value="${String(m.pattern || "").replace(/"/g, "&quot;")}" placeholder="Pattern, e.g. NETFLIX" required />
+
+          <select name="parent_category" id="mappingParent" onchange="updateMappingSubCategories(this.value)" required>
+            ${parentOptions(m.parent_category)}
+          </select>
+
+          <select name="sub_category" id="mappingSub" required>
+            ${subOptions(m.parent_category, m.sub_category)}
+          </select>
+
+          <label class="inline-toggle">
+            <input type="checkbox" name="active" ${m.active !== false ? "checked" : ""} />
+            Active
+          </label>
+
+          <div class="edit-actions">
+            <button type="button" class="secondary" onclick="cancelSettingsEdit()">Cancel</button>
+            <button type="submit" class="primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
+function renderSettings() {
+  const activeObligations = obligations.filter(o => o.active !== false);
+  const inactiveObligations = obligations.filter(o => o.active === false);
+  const activeMappings = mappings.filter(m => m.active !== false);
+  const inactiveMappings = mappings.filter(m => m.active === false);
+
+  const renderObligationCard = o => `
+    <div class="settings-card">
+      <div class="settings-card-header">
+        <div>
+          <div class="settings-card-title">${o.name}</div>
+          <div class="settings-card-meta">${o.frequency} · next ${formatShortDate(o.next_due_date)}</div>
+          <div class="settings-card-meta">${o.parent_category} · ${o.sub_category}</div>
+          <span class="badge ${o.active === false ? "off" : ""}">${o.active === false ? "Inactive" : "Active"}</span>
+        </div>
+        <div class="settings-card-amount">${dollarsExact(o.amount)}</div>
+      </div>
+      <div class="settings-actions">
+        <button onclick="setEditingObligation('${o.id}')">Edit</button>
+        <button onclick="deleteObligation('${o.id}')">Delete</button>
+      </div>
+    </div>
+  `;
+
+  const renderMappingCard = m => `
+    <div class="settings-card">
+      <div class="settings-card-header">
+        <div>
+          <div class="settings-card-title">${m.pattern}</div>
+          <div class="settings-card-meta">${m.parent_category} · ${m.sub_category}</div>
+          <span class="badge ${m.active === false ? "off" : ""}">${m.active === false ? "Inactive" : "Active"}</span>
+        </div>
+      </div>
+      <div class="settings-actions">
+        <button onclick="setEditingMapping('${m.id}')">Edit</button>
+        <button onclick="deleteMapping('${m.id}')">Delete</button>
+      </div>
+    </div>
+  `;
+
+  return `
+    <section class="hero-card">
+      <div class="hero-label">Settings</div>
+      <div class="hero-value">Rules & obligations</div>
+      <div class="hero-context">Configure known bills and remembered transaction mappings without changing code.</div>
+    </section>
+
+    <div class="section-title">
+      <h2>Scheduled Obligations</h2>
+      <span>${activeObligations.length} active</span>
+    </div>
+    <section class="panel">
+      <p class="muted">Known recurring bills are counted when they are due, not smoothed daily.</p>
+      <button class="primary" onclick="setEditingObligation('new')">Add Obligation</button>
+    </section>
+    <div class="settings-grid">
+      ${activeObligations.length ? activeObligations.map(renderObligationCard).join("") : `<p class="muted">No active obligations yet.</p>`}
+      ${inactiveObligations.length ? `<details class="panel"><summary><strong>Inactive obligations</strong></summary>${inactiveObligations.map(renderObligationCard).join("")}</details>` : ""}
+    </div>
+
+    <div class="section-title">
+      <h2>Mapping Rules</h2>
+      <span>${activeMappings.length} active</span>
+    </div>
+    <section class="panel">
+      <p class="muted">Mapping rules reduce Needs Review by remembering stable merchant patterns.</p>
+      <button class="primary" onclick="setEditingMapping('new')">Add Mapping Rule</button>
+    </section>
+    <div class="settings-grid">
+      ${activeMappings.length ? activeMappings.map(renderMappingCard).join("") : `<p class="muted">No active mapping rules yet.</p>`}
+      ${inactiveMappings.length ? `<details class="panel"><summary><strong>Inactive mapping rules</strong></summary>${inactiveMappings.map(renderMappingCard).join("")}</details>` : ""}
+    </div>
+
+    ${renderObligationModal()}
+    ${renderMappingModal()}
+  `;
+}
+
 function renderTransactionHistory() {
   const parentOptions = Object.keys(categoryModel)
     .map(parent => `<option value="${parent}">${parent}</option>`)
@@ -2201,6 +2870,8 @@ function render() {
           ? renderDashboard()
           : activeTab === "transactions"
           ? renderTransactionHistory()
+          : activeTab === "settings"
+          ? renderSettings()
           : renderWealth()
       }`;
 
@@ -2208,13 +2879,14 @@ function render() {
     <main>
       <div class="app-header">
         <h1 class="app-title">Goodman Finances Inc.</h1>
-        <div class="app-subtitle">Household financial control system · v17</div>
+        <div class="app-subtitle">Household financial control system · v18</div>
       </div>
 
       <div class="tabs">
         <button class="${activeTab === "wealth" ? "active" : ""}" onclick="setTab('wealth')">Wealth</button>
-        <button class="${activeTab === "dashboard" ? "active" : ""}" onclick="setTab('dashboard')">Budget Tracker</button>
-        <button class="${activeTab === "transactions" ? "active" : ""}" onclick="setTab('transactions')">Transaction History</button>
+        <button class="${activeTab === "dashboard" ? "active" : ""}" onclick="setTab('dashboard')">Budget</button>
+        <button class="${activeTab === "transactions" ? "active" : ""}" onclick="setTab('transactions')">Transactions</button>
+        <button class="${activeTab === "settings" ? "active" : ""}" onclick="setTab('settings')">Settings</button>
       </div>
 
       ${bodyContent}
