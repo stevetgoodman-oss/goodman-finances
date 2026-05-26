@@ -729,6 +729,7 @@ let appError = "";
 let transactions = [];
 let obligations = [];
 let mappings = [];
+let customSubcategories = [];
 
 const defaultObligations = [
   {
@@ -912,6 +913,65 @@ async function syncObligationsToSupabase() {
   }
 }
 
+
+async function fetchCustomSubcategories() {
+  if (!isSupabaseConfigured()) {
+    customSubcategories = JSON.parse(localStorage.getItem("custom_subcategories") || "[]");
+    return;
+  }
+
+  const rows = await supabaseFetch("custom_subcategories?select=*&order=parent_category.asc");
+  customSubcategories = (rows || []).map(row => ({
+    id: row.id,
+    parent_category: row.parent_category,
+    sub_category: row.sub_category,
+    active: !!row.active
+  }));
+}
+
+async function syncCustomSubcategoriesToSupabase() {
+  localStorage.setItem("custom_subcategories", JSON.stringify(customSubcategories));
+
+  if (!isSupabaseConfigured()) return;
+
+  const rows = customSubcategories.map(row => ({
+    id: row.id || uuid(),
+    parent_category: row.parent_category,
+    sub_category: row.sub_category,
+    active: row.active !== false
+  }));
+
+  if (rows.length) {
+    await supabaseFetch("custom_subcategories?on_conflict=id", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(rows)
+    });
+  }
+}
+
+async function ensureCustomSubcategory(parent, subcategory) {
+  const existsInBase = (categoryModel[parent] || []).includes(subcategory);
+
+  const existsCustom = customSubcategories.some(
+    item =>
+      item.active !== false &&
+      item.parent_category === parent &&
+      normaliseText(item.sub_category) === normaliseText(subcategory)
+  );
+
+  if (!existsInBase && !existsCustom) {
+    customSubcategories.push({
+      id: uuid(),
+      parent_category: parent,
+      sub_category: subcategory,
+      active: true
+    });
+
+    await syncCustomSubcategoriesToSupabase();
+  }
+}
+
 async function syncMappingsToSupabase() {
   localStorage.setItem("transaction_mappings", JSON.stringify(mappings));
 
@@ -1034,6 +1094,7 @@ async function loadSharedData() {
     }
 
     await fetchConfigTables();
+    await fetchCustomSubcategories();
 
     const txRows = await supabaseFetch("transactions?select=*&order=date.desc");
     transactions = (txRows || []).map(row => ({
@@ -1362,6 +1423,7 @@ function addTransaction(e) {
   const form = e.target;
   const amount = parseFloat(form.amount.value);
   const parent = form.parent.value;
+  const customSubcategoryInput = form.customSubcategory ? form.customSubcategory.value.trim() : "";
 
   let type = "expense";
   if (parent === "Income") type = "income";
@@ -1435,7 +1497,13 @@ async function saveEditedTransaction(e) {
   t.amount = amount;
   t.date = form.date.value;
   t.parent = parent;
-  t.sub = form.sub.value;
+  const finalSub = customSubcategoryInput || form.sub.value;
+
+  if (customSubcategoryInput) {
+    await ensureCustomSubcategory(parent, finalSub);
+  }
+
+  t.sub = finalSub;
   t.note = form.note.value;
   t.hidden = false;
 
@@ -2546,8 +2614,17 @@ function parentOptions(selected = "") {
     .join("");
 }
 
+function getAllSubcategories(parent) {
+  const base = categoryModel[parent] || [];
+  const custom = customSubcategories
+    .filter(item => item.active !== false && item.parent_category === parent)
+    .map(item => item.sub_category);
+
+  return [...new Set([...base, ...custom])].sort((a, b) => a.localeCompare(b));
+}
+
 function subOptions(parent, selected = "") {
-  return (categoryModel[parent] || [])
+  return getAllSubcategories(parent)
     .map(sub => `<option value="${sub}" ${sub === selected ? "selected" : ""}>${sub}</option>`)
     .join("");
 }
@@ -2584,6 +2661,12 @@ async function saveObligationFromForm(e) {
   e.preventDefault();
   const form = e.target;
 
+  const finalSubcategory = form.custom_subcategory.value.trim() || form.sub_category.value;
+
+  if (form.custom_subcategory.value.trim()) {
+    await ensureCustomSubcategory(form.parent_category.value, finalSubcategory);
+  }
+
   await saveObligation({
     id: form.id.value || uuid(),
     name: form.name.value.trim(),
@@ -2591,7 +2674,7 @@ async function saveObligationFromForm(e) {
     frequency: form.frequency.value,
     next_due_date: form.next_due_date.value,
     parent_category: form.parent_category.value,
-    sub_category: form.sub_category.value,
+    sub_category: finalSubcategory,
     active: form.active.checked
   });
 
@@ -2602,11 +2685,17 @@ async function saveMappingFromForm(e) {
   e.preventDefault();
   const form = e.target;
 
+  const finalSubcategory = form.custom_subcategory.value.trim() || form.sub_category.value;
+
+  if (form.custom_subcategory.value.trim()) {
+    await ensureCustomSubcategory(form.parent_category.value, finalSubcategory);
+  }
+
   await saveMapping({
     id: form.id.value || uuid(),
     pattern: form.pattern.value.trim(),
     parent_category: form.parent_category.value,
-    sub_category: form.sub_category.value,
+    sub_category: finalSubcategory,
     active: form.active.checked
   });
 
@@ -2653,6 +2742,8 @@ function renderObligationModal() {
             ${subOptions(o.parent_category, o.sub_category)}
           </select>
 
+          <input type="text" name="custom_subcategory" placeholder="Or add new subcategory" />
+
           <label class="inline-toggle">
             <input type="checkbox" name="active" ${o.active !== false ? "checked" : ""} />
             Active
@@ -2697,6 +2788,8 @@ function renderMappingModal() {
           <select name="sub_category" id="mappingSub" required>
             ${subOptions(m.parent_category, m.sub_category)}
           </select>
+
+          <input type="text" name="custom_subcategory" placeholder="Or add new subcategory" />
 
           <label class="inline-toggle">
             <input type="checkbox" name="active" ${m.active !== false ? "checked" : ""} />
