@@ -690,7 +690,7 @@ const categoryModel = {
   "Investing / Savings": ["ETFs", "Super", "Savings"]
 };
 
-const budgets = {
+const defaultBudgets = {
   "Mortgage": 6600,
   "Household": 891,
   "Transport": 371,
@@ -702,6 +702,8 @@ const budgets = {
   "Buffer / Price Increases": 150,
   "Investing / Savings": 0
 };
+
+let budgets = { ...defaultBudgets };
 
 const budgetStartDate = "2026-05-01";
 
@@ -726,6 +728,7 @@ let transactions = [];
 let scheduledCashflows = [];
 let mappings = [];
 let customSubcategories = [];
+let editingBudgetCategory = null;
 
 const defaultScheduledCashflows = [
   {
@@ -760,6 +763,681 @@ const defaultScheduledCashflows = [
     parent_category: "Mortgage",
     sub_category: "Home loan repayment",
     active: true
+  }
+];
+
+const defaultTransactionMappings = [
+  {
+    "pattern": "HOME LOAN PYMT",
+    "parent_category": "Mortgage",
+    "sub_category": "Home loan repayment",
+    "active": true
+  },
+  {
+    "pattern": "MORTGAGE",
+    "parent_category": "Mortgage",
+    "sub_category": "Home loan repayment",
+    "active": true
+  },
+  {
+    "pattern": "INTERNATIONAL TRANSACTION FEE",
+    "parent_category": "Buffer / Price Increases",
+    "sub_category": "General buffer",
+    "active": true
+  },
+  {
+    "pattern": "INTNL TRANSACTION FEE",
+    "parent_category": "Buffer / Price Increases",
+    "sub_category": "General buffer",
+    "active": true
+  },
+  {
+    "pattern": "DANNY FRAWLEY",
+    "parent_category": "Kids",
+    "sub_category": "Kids swimming lessons",
+    "active": true
+  },
+  {
+    "pattern": "WAVERLEY GYMNASTICS",
+    "parent_category": "Kids",
+    "sub_category": "Mila gymnastics",
+    "active": true
+  },
+  {
+    "pattern": "THEATREDELEDANSE",
+    "parent_category": "Kids",
+    "sub_category": "Mila Acro",
+    "active": true
+  },
+  {
+    "pattern": "THEATRE DE LA DANSE",
+    "parent_category": "Kids",
+    "sub_category": "Mila Acro",
+    "active": true
+  },
+  {
+    "pattern": "PAYRIX*THEATREDELEDANSE",
+    "parent_category": "Kids",
+    "sub_category": "Mila Acro",
+    "active": true
+  },
+  {
+    "pattern": "SPRIGGY SCHOOLS",
+    "parent_category": "Kids",
+    "sub_category": "Miscellaneous kids",
+    "active": true
+  },
+  {
+    "pattern": "HEALTHLINK CREW",
+    "parent_category": "Kids",
+    "sub_category": "Miscellaneous kids",
+    "active": true
+  },
+  {
+    "pattern": "AGL SALES",
+    "parent_category": "Household",
+    "sub_category": "AGL gas & electricity",
+    "active": true
+  },
+  {
+    "pattern": "AGL",
+    "parent_category": "Household",
+    "sub_category": "AGL gas & electricity",
+    "active": true
+  },
+  {
+    "pattern": "SOUTH EAST WATER",
+    "parent_category": "Household",
+    "sub_category": "Water",
+    "active": true
+  },
+  {
+    "pattern": "GLEN EIRA RATES",
+    "parent_category": "Household",
+    "sub_category": "Rates",
+    "active": true
+  },
+  {
+    "pattern": "GLEN EIRA CTY COUNCIL",
+    "parent_category": "Household",
+    "sub_category": "Rates",
+    "active": true
+  },
+  {
+    "pattern": "HOLLARDINS",
+    "parent_category": "Household",
+    "sub_category": "Home insurance",
+    "active": true
+  },
+  {
+    "pattern": "HOME INSURANCE",
+    "parent_category": "Household",
+    "sub_category": "Home insurance",
+    "active": true
+  },
+  {
+    "pattern": "BUNNINGS",
+    "parent_category": "Living",
+    "sub_category": "Home Maintenance",
+    "active": true
+  },
+  {
+    "pattern": "BUNNINGSSAUSAGESIZZLE",
+    "parent_category": "Living",
+    "sub_category": "Home Maintenance",
+    "active": true
+  },
+  {
+    "pattern": "CHEMIST WAREHOUSE",
+    "parent_category": "Living",
+    "sub_category": "Chemist",
+    "active": true
+  },
+  {
+    "pattern": "TERRYWHITE",
+    "parent_category": "Living",
+    "sub_category": "Chemist",
+    "active": true
+  },
+  {
+    "pattern": "CHEMMART",
+    "parent_category": "Living",
+    "sub_category": "Chemist",
+    "active": true
+  },
+  {
+    "pattern": "CWH",
+    "parent_category": "Living",
+    "sub_category": "Chemist",
+    "active": true
+  },
+  {
+    "pattern": "CHEMIST",
+    "parent_category": "Living",
+    "sub_category": "Chemist",
+    "active": true
+  },
+  {
+    "pattern": "PHARMACY",
+    "parent_category": "Living",
+    "sub_category": "Chemist",
+    "active": true
+  },
+  {
+    "pattern": "PRICELINE",
+    "parent_category": "Living",
+    "sub_category": "Chemist",
+    "active": true
+  },
+  {
+    "pattern": "DOORDASH ALDI",
+    "parent_category": "Living",
+    "sub_category": "Groceries",
+    "active": true
+  },
+  {
+    "pattern": "WOOLWORTHS",
+    "parent_category": "Living",
+    "sub_category": "Groceries",
+    "active": true
+  },
+  {
+    "pattern": "COLES",
+    "parent_category": "Living",
+    "sub_category": "Groceries",
+    "active": true
+  },
+  {
+    "pattern": "ALDI",
+    "parent_category": "Living",
+    "sub_category": "Groceries",
+    "active": true
+  },
+  {
+    "pattern": "IGA",
+    "parent_category": "Living",
+    "sub_category": "Groceries",
+    "active": true
+  },
+  {
+    "pattern": "BAKERS DELIGHT",
+    "parent_category": "Living",
+    "sub_category": "Groceries",
+    "active": true
+  },
+  {
+    "pattern": "ARTISANAL BAKEHOUS",
+    "parent_category": "Living",
+    "sub_category": "Groceries",
+    "active": true
+  },
+  {
+    "pattern": "TOORADIN BAKERY",
+    "parent_category": "Living",
+    "sub_category": "Groceries",
+    "active": true
+  },
+  {
+    "pattern": "MOLLY DENE BAKEHOUSE",
+    "parent_category": "Living",
+    "sub_category": "Groceries",
+    "active": true
+  },
+  {
+    "pattern": "LITTLE Z",
+    "parent_category": "Lifestyle",
+    "sub_category": "Coffee",
+    "active": true
+  },
+  {
+    "pattern": "NEIGHBOURHOOD COFF",
+    "parent_category": "Lifestyle",
+    "sub_category": "Coffee",
+    "active": true
+  },
+  {
+    "pattern": "DOORDASHDASHPA",
+    "parent_category": "Subscriptions",
+    "sub_category": "Doordash app subscription",
+    "active": true
+  },
+  {
+    "pattern": "DOORDASH",
+    "parent_category": "Lifestyle",
+    "sub_category": "Takeaway",
+    "active": true
+  },
+  {
+    "pattern": "UBER EATS",
+    "parent_category": "Lifestyle",
+    "sub_category": "Takeaway",
+    "active": true
+  },
+  {
+    "pattern": "MENULOG",
+    "parent_category": "Lifestyle",
+    "sub_category": "Takeaway",
+    "active": true
+  },
+  {
+    "pattern": "MCDONALD",
+    "parent_category": "Lifestyle",
+    "sub_category": "Takeaway",
+    "active": true
+  },
+  {
+    "pattern": "KFC",
+    "parent_category": "Lifestyle",
+    "sub_category": "Takeaway",
+    "active": true
+  },
+  {
+    "pattern": "GRILLD",
+    "parent_category": "Lifestyle",
+    "sub_category": "Takeaway",
+    "active": true
+  },
+  {
+    "pattern": "PIZZA",
+    "parent_category": "Lifestyle",
+    "sub_category": "Takeaway",
+    "active": true
+  },
+  {
+    "pattern": "HUNKY DORY",
+    "parent_category": "Lifestyle",
+    "sub_category": "Takeaway",
+    "active": true
+  },
+  {
+    "pattern": "LITTLE BANH MI",
+    "parent_category": "Lifestyle",
+    "sub_category": "Takeaway",
+    "active": true
+  },
+  {
+    "pattern": "BENTLEIGH RSL",
+    "parent_category": "Lifestyle",
+    "sub_category": "Steve Lou entertainment",
+    "active": true
+  },
+  {
+    "pattern": "BWS LIQUOR",
+    "parent_category": "Lifestyle",
+    "sub_category": "Steve Lou entertainment",
+    "active": true
+  },
+  {
+    "pattern": "CINEMA",
+    "parent_category": "Lifestyle",
+    "sub_category": "Steve Lou entertainment",
+    "active": true
+  },
+  {
+    "pattern": "TICKETEK",
+    "parent_category": "Lifestyle",
+    "sub_category": "Steve Lou entertainment",
+    "active": true
+  },
+  {
+    "pattern": "TICKETMASTER",
+    "parent_category": "Lifestyle",
+    "sub_category": "Steve Lou entertainment",
+    "active": true
+  },
+  {
+    "pattern": "RESTAURANT",
+    "parent_category": "Lifestyle",
+    "sub_category": "Steve Lou entertainment",
+    "active": true
+  },
+  {
+    "pattern": "BAR",
+    "parent_category": "Lifestyle",
+    "sub_category": "Steve Lou entertainment",
+    "active": true
+  },
+  {
+    "pattern": "AMAZON AU RETAIL",
+    "parent_category": "Lifestyle",
+    "sub_category": "Retail shopping",
+    "active": true
+  },
+  {
+    "pattern": "AMAZON AU MARKETPLACE",
+    "parent_category": "Lifestyle",
+    "sub_category": "Retail shopping",
+    "active": true
+  },
+  {
+    "pattern": "AMAZON MKTPL",
+    "parent_category": "Lifestyle",
+    "sub_category": "Retail shopping",
+    "active": true
+  },
+  {
+    "pattern": "CHADSTONE SHOPPIN",
+    "parent_category": "Lifestyle",
+    "sub_category": "Retail shopping",
+    "active": true
+  },
+  {
+    "pattern": "KMART",
+    "parent_category": "Lifestyle",
+    "sub_category": "Retail shopping",
+    "active": true
+  },
+  {
+    "pattern": "BIG W",
+    "parent_category": "Lifestyle",
+    "sub_category": "Retail shopping",
+    "active": true
+  },
+  {
+    "pattern": "WONTHAGGI WORKMENS",
+    "parent_category": "Lifestyle",
+    "sub_category": "Retail shopping",
+    "active": true
+  },
+  {
+    "pattern": "GLOW STUDIO",
+    "parent_category": "Lifestyle",
+    "sub_category": "Vanity",
+    "active": true
+  },
+  {
+    "pattern": "MY TELEHEALTH CLINIC",
+    "parent_category": "Lifestyle",
+    "sub_category": "Vanity",
+    "active": true
+  },
+  {
+    "pattern": "MY WEIGHT LOSS CLINIC",
+    "parent_category": "Lifestyle",
+    "sub_category": "Vanity",
+    "active": true
+  },
+  {
+    "pattern": "7-ELEVEN",
+    "parent_category": "Transport",
+    "sub_category": "Petrol",
+    "active": true
+  },
+  {
+    "pattern": "BP",
+    "parent_category": "Transport",
+    "sub_category": "Petrol",
+    "active": true
+  },
+  {
+    "pattern": "BP CALDER",
+    "parent_category": "Transport",
+    "sub_category": "Petrol",
+    "active": true
+  },
+  {
+    "pattern": "BP MOORABBIN",
+    "parent_category": "Transport",
+    "sub_category": "Petrol",
+    "active": true
+  },
+  {
+    "pattern": "BP AA",
+    "parent_category": "Transport",
+    "sub_category": "Petrol",
+    "active": true
+  },
+  {
+    "pattern": "BP BAYSIDE",
+    "parent_category": "Transport",
+    "sub_category": "Petrol",
+    "active": true
+  },
+  {
+    "pattern": "SHELL",
+    "parent_category": "Transport",
+    "sub_category": "Petrol",
+    "active": true
+  },
+  {
+    "pattern": "AMPOL",
+    "parent_category": "Transport",
+    "sub_category": "Petrol",
+    "active": true
+  },
+  {
+    "pattern": "CALTEX",
+    "parent_category": "Transport",
+    "sub_category": "Petrol",
+    "active": true
+  },
+  {
+    "pattern": "UNITED BENTLEIGH",
+    "parent_category": "Transport",
+    "sub_category": "Petrol",
+    "active": true
+  },
+  {
+    "pattern": "UNITED PETROLEUM",
+    "parent_category": "Transport",
+    "sub_category": "Petrol",
+    "active": true
+  },
+  {
+    "pattern": "REDDY EXPRESS",
+    "parent_category": "Transport",
+    "sub_category": "Petrol",
+    "active": true
+  },
+  {
+    "pattern": "VICROADS",
+    "parent_category": "Transport",
+    "sub_category": "Car rego",
+    "active": true
+  },
+  {
+    "pattern": "LINKT",
+    "parent_category": "Transport",
+    "sub_category": "Tolls",
+    "active": true
+  },
+  {
+    "pattern": "MYKI",
+    "parent_category": "Transport",
+    "sub_category": "MYKI",
+    "active": true
+  },
+  {
+    "pattern": "PUBLIC TRANSPORT VICTO",
+    "parent_category": "Transport",
+    "sub_category": "MYKI",
+    "active": true
+  },
+  {
+    "pattern": "TELSTRA SERVICES",
+    "parent_category": "Utilities / Personal",
+    "sub_category": "Phone and internet",
+    "active": true
+  },
+  {
+    "pattern": "OPTUS",
+    "parent_category": "Utilities / Personal",
+    "sub_category": "Phone and internet",
+    "active": true
+  },
+  {
+    "pattern": "AUSSIE BROADBAND",
+    "parent_category": "Utilities / Personal",
+    "sub_category": "Phone and internet",
+    "active": true
+  },
+  {
+    "pattern": "TPG",
+    "parent_category": "Utilities / Personal",
+    "sub_category": "Phone and internet",
+    "active": true
+  },
+  {
+    "pattern": "NBN",
+    "parent_category": "Utilities / Personal",
+    "sub_category": "Phone and internet",
+    "active": true
+  },
+  {
+    "pattern": "REC XPRESS",
+    "parent_category": "Utilities / Personal",
+    "sub_category": "Gym",
+    "active": true
+  },
+  {
+    "pattern": "REC EXPRESS",
+    "parent_category": "Utilities / Personal",
+    "sub_category": "Gym",
+    "active": true
+  },
+  {
+    "pattern": "COREPLUS",
+    "parent_category": "Utilities / Personal",
+    "sub_category": "Gym",
+    "active": true
+  },
+  {
+    "pattern": "ANYTIME FITNESS",
+    "parent_category": "Utilities / Personal",
+    "sub_category": "Gym",
+    "active": true
+  },
+  {
+    "pattern": "GENESIS",
+    "parent_category": "Utilities / Personal",
+    "sub_category": "Gym",
+    "active": true
+  },
+  {
+    "pattern": "FITNESS",
+    "parent_category": "Utilities / Personal",
+    "sub_category": "Gym",
+    "active": true
+  },
+  {
+    "pattern": "SPOTIFY",
+    "parent_category": "Subscriptions",
+    "sub_category": "Spotify",
+    "active": true
+  },
+  {
+    "pattern": "NETFLIX",
+    "parent_category": "Subscriptions",
+    "sub_category": "Netflix",
+    "active": true
+  },
+  {
+    "pattern": "AMZNPRIME",
+    "parent_category": "Subscriptions",
+    "sub_category": "Amazon",
+    "active": true
+  },
+  {
+    "pattern": "PRIME VIDE",
+    "parent_category": "Subscriptions",
+    "sub_category": "Amazon",
+    "active": true
+  },
+  {
+    "pattern": "DISNEY PLUS",
+    "parent_category": "Subscriptions",
+    "sub_category": "Disney",
+    "active": true
+  },
+  {
+    "pattern": "GOOGLE HAYU",
+    "parent_category": "Subscriptions",
+    "sub_category": "Hayu",
+    "active": true
+  },
+  {
+    "pattern": "HAYU",
+    "parent_category": "Subscriptions",
+    "sub_category": "Hayu",
+    "active": true
+  },
+  {
+    "pattern": "OPENAI",
+    "parent_category": "Subscriptions",
+    "sub_category": "Chat GPT",
+    "active": true
+  },
+  {
+    "pattern": "CHATGPT",
+    "parent_category": "Subscriptions",
+    "sub_category": "Chat GPT",
+    "active": true
+  },
+  {
+    "pattern": "STRONGLIFTS",
+    "parent_category": "Subscriptions",
+    "sub_category": "Stronglifts 5x5 app",
+    "active": true
+  },
+  {
+    "pattern": "MCC",
+    "parent_category": "Subscriptions",
+    "sub_category": "MCC membership",
+    "active": true
+  },
+  {
+    "pattern": "APPLE.COM/BILL MN412JXL",
+    "parent_category": "Subscriptions",
+    "sub_category": "HBO & Simply Draw",
+    "active": true
+  },
+  {
+    "pattern": "APPLE.COM/BILL MN411GV",
+    "parent_category": "Subscriptions",
+    "sub_category": "HBO & Simply Draw",
+    "active": true
+  },
+  {
+    "pattern": "APPLE.COM/BILL SYDNEY NS",
+    "parent_category": "Subscriptions",
+    "sub_category": "HBO & Simply Draw",
+    "active": true
+  },
+  {
+    "pattern": "APPLE.COM/BILL",
+    "parent_category": "Subscriptions",
+    "sub_category": "Apple storage",
+    "active": true
+  },
+  {
+    "pattern": "APPLE APPLE.COM/BILL",
+    "parent_category": "Subscriptions",
+    "sub_category": "Apple storage",
+    "active": true
+  },
+  {
+    "pattern": "GOOGLE STORAGE",
+    "parent_category": "Subscriptions",
+    "sub_category": "Google storage",
+    "active": true
+  },
+  {
+    "pattern": "BINGE",
+    "parent_category": "Subscriptions",
+    "sub_category": "HBO",
+    "active": true
+  },
+  {
+    "pattern": "HBO",
+    "parent_category": "Subscriptions",
+    "sub_category": "HBO",
+    "active": true
+  },
+  {
+    "pattern": "MAX",
+    "parent_category": "Subscriptions",
+    "sub_category": "HBO",
+    "active": true
   }
 ];
 
@@ -834,7 +1512,8 @@ function transactionDbRow(t) {
     sub: t.sub || "",
     note: t.note || "",
     type: t.type || "expense",
-    hidden: !!t.hidden
+    hidden: !!t.hidden,
+    is_reimbursement: !!t.is_reimbursement
   };
 }
 
@@ -887,6 +1566,22 @@ function mappingDbRow(item) {
 }
 
 
+
+function ensureDefaultTransactionMappings() {
+  defaultTransactionMappings.forEach(defaultItem => {
+    const exists = mappings.some(item =>
+      normaliseText(item.pattern) === normaliseText(defaultItem.pattern)
+    );
+
+    if (!exists) {
+      mappings.push({
+        ...defaultItem,
+        id: uuid()
+      });
+    }
+  });
+}
+
 function ensureDefaultScheduledCashflows() {
   defaultScheduledCashflows.forEach(defaultItem => {
     const exists = scheduledCashflows.some(item =>
@@ -903,12 +1598,78 @@ function ensureDefaultScheduledCashflows() {
   });
 }
 
+
+function budgetDbRow(parent, amount) {
+  return {
+    parent_category: parent,
+    monthly_budget: Number(amount || 0),
+    active: true
+  };
+}
+
+async function syncBudgetsToSupabase() {
+  localStorage.setItem("budget_categories", JSON.stringify(budgets));
+
+  if (!isSupabaseConfigured()) return;
+
+  const rows = Object.entries(budgets).map(([parent, amount]) => budgetDbRow(parent, amount));
+
+  if (rows.length) {
+    await supabaseFetch("budget_categories?on_conflict=parent_category", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(rows)
+    });
+  }
+}
+
+function ensureDefaultBudgets() {
+  Object.entries(defaultBudgets).forEach(([parent, amount]) => {
+    if (budgets[parent] === undefined || budgets[parent] === null) {
+      budgets[parent] = amount;
+    }
+  });
+}
+
+async function fetchBudgets() {
+  budgets = { ...defaultBudgets };
+
+  if (!isSupabaseConfigured()) {
+    const localBudgets = JSON.parse(localStorage.getItem("budget_categories") || "{}");
+    budgets = { ...defaultBudgets, ...localBudgets };
+    ensureDefaultBudgets();
+    localStorage.setItem("budget_categories", JSON.stringify(budgets));
+    return;
+  }
+
+  const rows = await supabaseFetch("budget_categories?select=*&order=parent_category.asc");
+  const loaded = {};
+
+  (rows || []).forEach(row => {
+    if (row.active !== false) {
+      loaded[row.parent_category] = Number(row.monthly_budget || 0);
+    }
+  });
+
+  budgets = { ...defaultBudgets, ...loaded };
+
+  const beforeKeys = new Set(Object.keys(loaded));
+  ensureDefaultBudgets();
+
+  const missingDefaults = Object.keys(defaultBudgets).some(parent => !beforeKeys.has(parent));
+  if (missingDefaults) {
+    await syncBudgetsToSupabase();
+  }
+}
+
 async function fetchConfigTables() {
   if (!isSupabaseConfigured()) {
     scheduledCashflows = JSON.parse(localStorage.getItem("scheduled_cashflows") || JSON.stringify(defaultScheduledCashflows));
     ensureDefaultScheduledCashflows();
     localStorage.setItem("scheduled_cashflows", JSON.stringify(scheduledCashflows));
     mappings = JSON.parse(localStorage.getItem("transaction_mappings") || "[]");
+    ensureDefaultTransactionMappings();
+    localStorage.setItem("transaction_mappings", JSON.stringify(mappings));
     customSubcategories = JSON.parse(localStorage.getItem("custom_subcategories") || "[]");
     return;
   }
@@ -941,6 +1702,13 @@ async function fetchConfigTables() {
     sub_category: row.sub_category,
     active: !!row.active
   }));
+
+  const beforeMappingDefaultCount = mappings.length;
+  ensureDefaultTransactionMappings();
+
+  if (mappings.length > beforeMappingDefaultCount) {
+    await syncMappingsToSupabase();
+  }
 
   const subcategoryRows = await supabaseFetch("custom_subcategories?select=*&order=parent_category.asc");
   customSubcategories = (subcategoryRows || []).map(row => ({
@@ -1117,6 +1885,7 @@ async function loadSharedData() {
   try {
     if (!isSupabaseConfigured()) {
       await fetchConfigTables();
+      await fetchBudgets();
       transactions = JSON.parse(localStorage.getItem("transactions") || "[]");
       wealth = JSON.parse(localStorage.getItem("wealth") || JSON.stringify(defaultWealth));
       wealth = {
@@ -1131,6 +1900,7 @@ async function loadSharedData() {
     }
 
     await fetchConfigTables();
+    await fetchBudgets();
 
     const txRows = await supabaseFetch("transactions?select=*&order=date.desc");
     transactions = (txRows || []).map(row => ({
@@ -1141,7 +1911,8 @@ async function loadSharedData() {
       sub: row.sub,
       note: row.note,
       type: row.type,
-      hidden: !!row.hidden
+      hidden: !!row.hidden,
+      is_reimbursement: !!row.is_reimbursement
     }));
 
     const wealthRows = await supabaseFetch("wealth?select=*&id=eq.1");
@@ -1286,11 +2057,11 @@ function isTargetCategory(parent) {
 }
 
 function transactionCountsForBudget(t) {
-  return t.type === "expense";
+  return t.type === "expense" || !!t.is_reimbursement;
 }
 
 function transactionCountsForIncome(t) {
-  return t.type === "income";
+  return t.type === "income" && !t.is_reimbursement;
 }
 
 function expenseValue(t) {
@@ -1448,7 +2219,7 @@ function updateSubCategories(parentValue) {
   const subSelect = document.getElementById("sub");
   if (!subSelect) return;
 
-  subSelect.innerHTML = categoryModel[parentValue]
+  subSelect.innerHTML = getAllSubcategories(parentValue)
     .map(sub => `<option value="${sub}">${sub}</option>`)
     .join("");
 }
@@ -1473,7 +2244,8 @@ function addTransaction(e) {
     sub: form.sub.value,
     note: form.note.value,
     hidden: false,
-    imported: false
+    imported: false,
+    is_reimbursement: false
   });
 
   save();
@@ -1514,7 +2286,7 @@ function updateEditSubCategories(parentValue) {
   const subSelect = document.getElementById("editSub");
   if (!subSelect) return;
 
-  subSelect.innerHTML = categoryModel[parentValue]
+  subSelect.innerHTML = getAllSubcategories(parentValue)
     .map(sub => `<option value="${sub}">${sub}</option>`)
     .join("");
 }
@@ -1530,6 +2302,7 @@ async function saveEditedTransaction(e) {
   const amount = parseFloat(form.amount.value);
   const customSubcategoryInput = form.customSubcategory ? form.customSubcategory.value.trim() : "";
   const finalSub = customSubcategoryInput || form.sub.value;
+  const isReimbursement = amount > 0 && form.isReimbursement && form.isReimbursement.checked;
 
   if (customSubcategoryInput) {
     await ensureCustomSubcategory(parent, finalSub);
@@ -1541,8 +2314,11 @@ async function saveEditedTransaction(e) {
   t.sub = finalSub;
   t.note = form.note.value;
   t.hidden = false;
+  t.is_reimbursement = isReimbursement;
 
-  if (parent === "Income") {
+  if (isReimbursement) {
+    t.type = "expense";
+  } else if (parent === "Income") {
     t.type = "income";
   } else if (parent === "Needs Review") {
     t.type = "needs_review";
@@ -1553,7 +2329,7 @@ async function saveEditedTransaction(e) {
     t.type = "expense";
   }
 
-  if (form.rememberMapping && form.rememberMapping.checked && form.mappingPattern.value.trim()) {
+  if (!isReimbursement && form.rememberMapping && form.rememberMapping.checked && form.mappingPattern.value.trim()) {
     await saveMapping({
       id: uuid(),
       pattern: form.mappingPattern.value.trim(),
@@ -1604,7 +2380,13 @@ function renderEditModal() {
           <input type="text" name="customSubcategory" placeholder="Or add new subcategory" />
 
           <label class="inline-toggle">
-            <input type="checkbox" name="rememberMapping" />
+            <input type="checkbox" name="isReimbursement" ${t.is_reimbursement ? "checked" : ""} ${Number(t.amount) <= 0 ? "disabled" : ""} />
+            Reimbursement
+          </label>
+          ${Number(t.amount) <= 0 ? `<p class="muted">Reimbursement can only be used for positive transactions.</p>` : ""}
+
+          <label class="inline-toggle">
+            <input type="checkbox" name="rememberMapping" ${t.is_reimbursement ? "disabled" : ""} />
             Remember this mapping for future imports
           </label>
           <input type="text" name="mappingPattern" value="${normaliseText(t.note).slice(0, 40).replace(/"/g, "&quot;")}" placeholder="Pattern to remember, e.g. NETFLIX" />
@@ -1711,72 +2493,6 @@ function classifyTransaction(description, amount) {
     };
   }
 
-  if (d.includes("HOME LOAN PYMT") || d.includes("MORTGAGE")) {
-    return { type: "expense", parent: "Mortgage", sub: "Home loan repayment", hidden: false };
-  }
-
-  if (d.includes("INTERNATIONAL TRANSACTION FEE") || d.includes("INTNL TRANSACTION FEE")) {
-    return { type: "expense", parent: "Buffer / Price Increases", sub: "General buffer", hidden: false };
-  }
-
-  const rules = [
-    // Kids
-    { keys: ["DANNY FRAWLEY"], parent: "Kids", sub: "Kids swimming lessons" },
-    { keys: ["WAVERLEY GYMNASTICS"], parent: "Kids", sub: "Mila gymnastics" },
-    { keys: ["THEATREDELEDANSE", "THEATRE DE LA DANSE", "PAYRIX*THEATREDELEDANSE"], parent: "Kids", sub: "Mila Acro" },
-    { keys: ["SPRIGGY SCHOOLS", "HEALTHLINK CREW"], parent: "Kids", sub: "Miscellaneous kids" },
-
-    // Mortgage and household
-    { keys: ["AGL SALES", "AGL"], parent: "Household", sub: "AGL gas & electricity" },
-    { keys: ["SOUTH EAST WATER"], parent: "Household", sub: "Water" },
-    { keys: ["GLEN EIRA RATES", "GLEN EIRA CTY COUNCIL"], parent: "Household", sub: "Rates" },
-    { keys: ["HOLLARDINS", "HOME INSURANCE"], parent: "Household", sub: "Home insurance" },
-
-    // Living
-    { keys: ["BUNNINGS", "BUNNINGSSAUSAGESIZZLE"], parent: "Living", sub: "Home Maintenance" },
-    { keys: ["CHEMIST WAREHOUSE", "TERRYWHITE", "CHEMMART", "CWH", "CHEMIST", "PHARMACY", "PRICELINE"], parent: "Living", sub: "Chemist" },
-    { keys: ["DOORDASH ALDI"], parent: "Living", sub: "Groceries" },
-    { keys: ["WOOLWORTHS", "COLES", "ALDI", "IGA", "BAKERS DELIGHT", "ARTISANAL BAKEHOUS", "TOORADIN BAKERY", "MOLLY DENE BAKEHOUSE"], parent: "Living", sub: "Groceries" },
-
-    // Lifestyle
-    { keys: ["LITTLE Z", "NEIGHBOURHOOD COFF"], parent: "Lifestyle", sub: "Coffee" },
-    { keys: ["DOORDASHDASHPA"], parent: "Subscriptions", sub: "Doordash app subscription" },
-    { keys: ["DOORDASH", "UBER EATS", "MENULOG", "MCDONALD", "KFC", "GRILLD", "PIZZA", "HUNKY DORY", "LITTLE BANH MI"], parent: "Lifestyle", sub: "Takeaway" },
-    { keys: ["BENTLEIGH RSL", "BWS LIQUOR", "CINEMA", "TICKETEK", "TICKETMASTER", "RESTAURANT", " BAR"], parent: "Lifestyle", sub: "Steve Lou entertainment" },
-    { keys: ["AMAZON AU RETAIL", "AMAZON AU MARKETPLACE", "AMAZON MKTPL", "CHADSTONE SHOPPIN", "KMART", "BIG W", "WONTHAGGI WORKMENS"], parent: "Lifestyle", sub: "Retail shopping" },
-    { keys: ["GLOW STUDIO", "MY TELEHEALTH CLINIC", "MY WEIGHT LOSS CLINIC"], parent: "Lifestyle", sub: "Vanity" },
-
-    // Transport
-    { keys: ["7-ELEVEN", "BP ", "BP CALDER", "BP MOORABBIN", "BP AA", "BP BAYSIDE", "SHELL", "AMPOL", "CALTEX", "UNITED BENTLEIGH", "UNITED PETROLEUM", "REDDY EXPRESS"], parent: "Transport", sub: "Petrol" },
-    { keys: ["VICROADS"], parent: "Transport", sub: "Car rego" },
-    { keys: ["LINKT"], parent: "Transport", sub: "Tolls" },
-    { keys: ["MYKI", "PUBLIC TRANSPORT VICTO"], parent: "Transport", sub: "MYKI" },
-
-    // Utilities / Personal
-    { keys: ["TELSTRA SERVICES", "OPTUS", "AUSSIE BROADBAND", "TPG", "NBN"], parent: "Utilities / Personal", sub: "Phone and internet" },
-    { keys: ["REC XPRESS", "REC EXPRESS", "COREPLUS", "ANYTIME FITNESS", "GENESIS", "FITNESS"], parent: "Utilities / Personal", sub: "Gym" },
-
-    // Subscriptions
-    { keys: ["SPOTIFY"], parent: "Subscriptions", sub: "Spotify" },
-    { keys: ["NETFLIX"], parent: "Subscriptions", sub: "Netflix" },
-    { keys: ["AMZNPRIME", "PRIME VIDE"], parent: "Subscriptions", sub: "Amazon" },
-    { keys: ["DISNEY PLUS"], parent: "Subscriptions", sub: "Disney" },
-    { keys: ["GOOGLE HAYU", "HAYU"], parent: "Subscriptions", sub: "Hayu" },
-    { keys: ["OPENAI", "CHATGPT"], parent: "Subscriptions", sub: "Chat GPT" },
-    { keys: ["STRONGLIFTS"], parent: "Subscriptions", sub: "Stronglifts 5x5 app" },
-    { keys: ["MCC"], parent: "Subscriptions", sub: "MCC membership" },
-    { keys: ["APPLE.COM/BILL MN412JXL", "APPLE.COM/BILL MN411GV", "APPLE.COM/BILL SYDNEY NS"], parent: "Subscriptions", sub: "HBO & Simply Draw" },
-    { keys: ["APPLE.COM/BILL", "APPLE APPLE.COM/BILL"], parent: "Subscriptions", sub: "Apple storage" },
-    { keys: ["GOOGLE STORAGE"], parent: "Subscriptions", sub: "Google storage" },
-    { keys: ["BINGE", "HBO", "MAX"], parent: "Subscriptions", sub: "HBO" }
-  ];
-
-  for (const rule of rules) {
-    if (rule.keys.some(k => d.includes(k))) {
-      return { type: "expense", parent: rule.parent, sub: rule.sub, hidden: false };
-    }
-  }
-
   if (amount > 0) {
     return { type: "income", parent: "Income", sub: "Other income", hidden: false };
   }
@@ -1811,13 +2527,18 @@ function importCSVFile(file) {
 
     const headers = rows[0];
 
-    const dateIndex = findColumn(headers, ["DATE"]);
-    const descIndex = findColumn(headers, ["DESCRIPTION", "TRANSACTION", "DETAILS", "NARRATIVE"]);
-    const amountIndex = findColumn(headers, ["AMOUNT"]);
+    let dateIndex = findColumn(headers, ["DATE"]);
+    let descIndex = findColumn(headers, ["DESCRIPTION", "TRANSACTION", "DETAILS", "NARRATIVE"]);
+    let amountIndex = findColumn(headers, ["AMOUNT"]);
+    let dataRows = rows.slice(1);
 
     if (dateIndex === -1 || descIndex === -1 || amountIndex === -1) {
-      alert("Could not identify Date, Description and Amount columns.");
-      return;
+      // CBA exports can arrive without headers. Fallback positional mapping:
+      // Column A = date, Column B = amount, Column C = description.
+      dateIndex = 0;
+      amountIndex = 1;
+      descIndex = 2;
+      dataRows = rows;
     }
 
     const existing = new Set(transactions.map(makeFingerprint));
@@ -1827,7 +2548,7 @@ function importCSVFile(file) {
     let ignored = 0;
     let needsReview = 0;
 
-    rows.slice(1).forEach(row => {
+    dataRows.forEach(row => {
       const date = parseDate(row[dateIndex]);
       const note = row[descIndex];
       const amount = parseFloat(String(row[amountIndex]).replace(/[$,]/g, ""));
@@ -1845,7 +2566,8 @@ function importCSVFile(file) {
         sub: classification.sub,
         note,
         hidden: classification.hidden,
-        imported: true
+        imported: true,
+        is_reimbursement: false
       };
 
       const fingerprint = makeFingerprint(tx);
@@ -2826,12 +3548,64 @@ function renderMappingModal() {
   `;
 }
 
+
+function setEditingBudgetCategory(parent) {
+  editingBudgetCategory = parent;
+  render();
+}
+
+function cancelBudgetEdit() {
+  editingBudgetCategory = null;
+  render();
+}
+
+async function saveBudgetCategoryFromForm(e) {
+  e.preventDefault();
+
+  const form = e.target;
+  const parent = form.parent_category.value;
+  const amount = toNumber(form.monthly_budget.value);
+
+  budgets[parent] = amount;
+  editingBudgetCategory = null;
+
+  await syncBudgetsToSupabase();
+  render();
+}
+
+function renderBudgetModal() {
+  if (editingBudgetCategory === null) return "";
+
+  const parent = editingBudgetCategory;
+  const amount = budgets[parent] || 0;
+
+  return `
+    <div class="edit-overlay">
+      <div class="edit-sheet">
+        <h2>Edit Monthly Budget</h2>
+        <p class="muted">${parent}</p>
+
+        <form onsubmit="saveBudgetCategoryFromForm(event)">
+          <input type="hidden" name="parent_category" value="${parent}" />
+          <input type="number" step="0.01" name="monthly_budget" value="${amount}" placeholder="Monthly budget" required />
+
+          <div class="edit-actions">
+            <button type="button" class="secondary" onclick="cancelBudgetEdit()">Cancel</button>
+            <button type="submit" class="primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
 function renderSettings() {
   const activeIncome = scheduledCashflows.filter(item => item.active !== false && item.type === "income");
   const activeObligations = scheduledCashflows.filter(item => item.active !== false && item.type !== "income");
   const inactiveCashflows = scheduledCashflows.filter(item => item.active === false);
   const activeMappings = mappings.filter(item => item.active !== false);
   const inactiveMappings = mappings.filter(item => item.active === false);
+  const budgetEntries = Object.entries(budgets);
 
   const renderCashflowCard = item => `
     <div class="settings-card">
@@ -2847,6 +3621,22 @@ function renderSettings() {
       <div class="settings-actions">
         <button onclick="setEditingCashflow('${item.id}')">Edit</button>
         <button onclick="deleteScheduledCashflow('${item.id}')">Delete</button>
+      </div>
+    </div>
+  `;
+
+  const renderBudgetCard = ([parent, amount]) => `
+    <div class="settings-card">
+      <div class="settings-card-header">
+        <div>
+          <div class="settings-card-title">${parent}</div>
+          <div class="settings-card-meta">Monthly budget envelope</div>
+          <span class="badge">Budget</span>
+        </div>
+        <div class="settings-card-amount">${dollarsExact(amount)}</div>
+      </div>
+      <div class="settings-actions">
+        <button onclick="setEditingBudgetCategory('${parent}')">Edit</button>
       </div>
     </div>
   `;
@@ -2896,6 +3686,15 @@ function renderSettings() {
     ${inactiveCashflows.length ? `<details class="panel"><summary><strong>Inactive cashflows</strong></summary>${inactiveCashflows.map(renderCashflowCard).join("")}</details>` : ""}
 
     <div class="section-title">
+      <h2>Monthly Budgets</h2>
+      <span>${budgetEntries.length} categories</span>
+    </div>
+    <section class="panel">
+      <p class="muted">Edit monthly budget envelopes without changing code. Parent categories remain controlled by the app.</p>
+    </section>
+    ${budgetEntries.map(renderBudgetCard).join("")}
+
+    <div class="section-title">
       <h2>Mapping Rules</h2>
       <span>${activeMappings.length} active</span>
     </div>
@@ -2908,6 +3707,7 @@ function renderSettings() {
 
     ${renderCashflowModal()}
     ${renderMappingModal()}
+    ${renderBudgetModal()}
   `;
 }
 
@@ -2927,6 +3727,7 @@ function renderTransactionHistory() {
           <strong>${t.sub}</strong>
           <div class="muted">${t.parent} · ${t.date}${t.note ? " · " + t.note : ""}</div>
           ${t.type === "needs_review" ? `<span class="pill">Needs review</span>` : ""}
+          ${t.is_reimbursement ? `<span class="pill">Reimbursement</span>` : ""}
         </div>
         <div>
           <strong>${t.amount < 0 ? "-" : "+"}${dollarsExact(Math.abs(t.amount))}</strong>
@@ -2999,7 +3800,7 @@ function render() {
     <main>
       <div class="app-header">
         <h1 class="app-title">Goodman Finances Inc.</h1>
-        <div class="app-subtitle">Household financial control system · v19</div>
+        <div class="app-subtitle">Household financial control system · v21</div>
       </div>
 
       <div class="tabs">
