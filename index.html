@@ -191,17 +191,17 @@ main {
 }
 
 .plan-card-title {
-  font-size: 22px;
-  font-weight: 900;
+  font-size: 19px;
+  font-weight: 850;
   color: var(--navy);
   letter-spacing: -0.03em;
 }
 
 .plan-card-status {
   white-space: nowrap;
-  font-size: 13px;
-  font-weight: 900;
-  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 850;
+  padding: 4px 9px;
   border-radius: 999px;
 }
 
@@ -223,8 +223,8 @@ main {
 }
 
 .plan-card-result {
-  font-size: 21px;
-  font-weight: 900;
+  font-size: 18px;
+  font-weight: 850;
   letter-spacing: -0.02em;
   margin-bottom: 10px;
 }
@@ -235,6 +235,87 @@ main {
 
 .plan-card-result.bad {
   color: var(--red);
+}
+
+
+.budget-section-heading {
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--navy);
+  margin: 16px 0 6px;
+}
+
+.cashflow-preview {
+  margin-top: 14px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.view-all-link {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--navy);
+  font-weight: 900;
+  text-align: left;
+  padding: 12px 0 2px;
+  font-size: 15px;
+}
+
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(15,23,42,0.45);
+  display: flex;
+  align-items: flex-end;
+}
+
+.sheet {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  max-height: 82vh;
+  overflow: auto;
+  background: white;
+  border-radius: 28px 28px 0 0;
+  padding: 22px 20px 110px;
+  box-shadow: 0 -16px 40px rgba(15,23,42,0.22);
+}
+
+.sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.sheet-header h2 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  color: var(--navy);
+}
+
+.sheet-close {
+  border: 0;
+  border-radius: 999px;
+  background: #E2E8F0;
+  color: var(--navy);
+  font-weight: 900;
+  padding: 10px 14px;
+}
+
+.sheet-date-group {
+  margin-top: 14px;
+}
+
+.sheet-date-title {
+  font-weight: 900;
+  color: var(--navy);
+  margin: 12px 0 4px;
 }
 
 .settings-accordion {
@@ -913,6 +994,7 @@ let editingId = null;
 let wealthEditOpen = false;
 let editingCashflowId = null;
 let editingMappingId = null;
+let cashflowModalOpen = false;
 let appLoading = true;
 let appError = "";
 let transactions = [];
@@ -3325,6 +3407,66 @@ function subOptions(parent, selected = "") {
     .join("");
 }
 
+
+function setCashflowModal(open) {
+  cashflowModalOpen = open;
+  render();
+}
+
+function groupCashflowsByDate(items) {
+  return items.reduce((groups, item) => {
+    const key = item.occurrence_date || item.date || "";
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(item);
+    return groups;
+  }, {});
+}
+
+function renderAllCashflowsSheet(items, days) {
+  if (!cashflowModalOpen) return "";
+
+  const grouped = groupCashflowsByDate(items);
+  const dates = Object.keys(grouped).sort((a, b) => parseLocalISODate(a) - parseLocalISODate(b));
+
+  return `
+    <div class="sheet-overlay" onclick="setCashflowModal(false)">
+      <div class="sheet" onclick="event.stopPropagation()">
+        <div class="sheet-header">
+          <div>
+            <h2>Scheduled cashflows</h2>
+            <p class="muted">Next ${days} days · ${items.length} transactions</p>
+          </div>
+          <button class="sheet-close" onclick="setCashflowModal(false)">Close</button>
+        </div>
+        ${
+          dates.length
+            ? dates.map(date => `
+              <div class="sheet-date-group">
+                <div class="sheet-date-title">${formatShortDate(date)}</div>
+                ${grouped[date].map(item => `
+                  <div class="sub-row">
+                    <span>${item.name}</span>
+                    <strong class="${item.direction === "+" ? "good" : "bad"}">${item.direction}${dollars(item.amount)}</strong>
+                  </div>
+                `).join("")}
+              </div>
+            `).join("")
+            : `<div class="empty">No scheduled cashflows in this window.</div>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+function aggregateScheduledBySubcategory(items) {
+  return items.reduce((totals, item) => {
+    const sub = item.sub_category || "Uncategorised";
+    totals[sub] = (totals[sub] || 0) + Number(item.amount || 0);
+    return totals;
+  }, {});
+}
+
+
 function renderDashboard() {
   const monthlySummary = getMonthlySummary();
   const monthlyParentTotals = getThisMonthParentTotals();
@@ -3348,6 +3490,8 @@ function renderDashboard() {
   const upcomingIncomeTotal = cashflowTotal(upcomingIncome);
   const currentAvailableCash = toNumber(wealth.current.householdCash);
   const expectedAvailableCash = currentAvailableCash + upcomingIncomeTotal - upcomingExpensesTotal;
+  const allUpcomingCashflows = [...upcomingIncome.map(i => ({ ...i, direction: "+" })), ...upcomingExpenses.map(o => ({ ...o, direction: "-" }))]
+    .sort((a, b) => a.occurrenceDate - b.occurrenceDate);
 
   const parentPlanTotals = {};
   expensesScheduledThisMonth.forEach(item => {
@@ -3441,14 +3585,15 @@ function renderDashboard() {
             ${
               scheduledItems.length
                 ? `<div class="sub-breakdown">
-                    ${scheduledItems.map(item => `<div class="sub-row"><span>${formatShortDate(item.occurrence_date)} · ${item.sub_category}</span><strong>${dollars(item.amount)}</strong></div>`).join("")}
+                    <div class="budget-section-heading">Scheduled this month</div>
+                    ${Object.entries(aggregateScheduledBySubcategory(scheduledItems)).sort((a,b) => b[1]-a[1]).map(([sub, amount]) => `<div class="sub-row"><span>${sub}</span><strong>${dollars(amount)}</strong></div>`).join("")}
                   </div>`
                 : `<div class="empty">No scheduled expenses for this category this month.</div>`
             }
             ${
               Object.keys(subTotals).length
                 ? `<div class="sub-breakdown">
-                    <strong>Actual by subcategory</strong>
+                    <div class="budget-section-heading">Actual by subcategory</div>
                     ${Object.entries(subTotals).sort((a,b) => b[1]-a[1]).map(([sub, amount]) => `
                       <div class="sub-row"><span>${sub}</span><strong>${dollars(amount)}</strong></div>
                     `).join("")}
@@ -3491,18 +3636,23 @@ function renderDashboard() {
       <div class="metric-row"><span>Expected income</span><strong class="good">+${dollars(upcomingIncomeTotal)}</strong></div>
       <div class="metric-row"><span>Scheduled expenses</span><strong class="bad">-${dollars(upcomingExpensesTotal)}</strong></div>
       <div class="metric-row total"><span>Available after expenses</span><strong>${dollars(expectedAvailableCash)}</strong></div>
-      <details>
+      <details class="cashflow-preview">
         <summary class="muted">View scheduled cashflows</summary>
         ${
-          [...upcomingIncome.map(i => ({ ...i, direction: "+" })), ...upcomingExpenses.map(o => ({ ...o, direction: "-" }))]
-            .sort((a, b) => a.occurrenceDate - b.occurrenceDate)
+          allUpcomingCashflows
             .slice(0, 10)
             .map(item => `
               <div class="sub-row"><span>${formatShortDate(item.occurrence_date)} · ${item.name}</span><strong class="${item.direction === "+" ? "good" : "bad"}">${item.direction}${dollars(item.amount)}</strong></div>
             `).join("") || `<div class="empty">No scheduled cashflows in this window.</div>`
         }
+        ${
+          allUpcomingCashflows.length > 10
+            ? `<button class="view-all-link" onclick="setCashflowModal(true)">View all scheduled cashflows →</button>`
+            : ""
+        }
       </details>
     </section>
+    ${renderAllCashflowsSheet(allUpcomingCashflows, cashflowWindowDays)}
 
     ${healthCards}
 
@@ -3948,7 +4098,7 @@ function render() {
     <main>
       <div class="app-header">
         <h1 class="app-title">Goodman Finances Inc.</h1>
-        <div class="app-subtitle">Household financial control system · v22.2</div>
+        <div class="app-subtitle">Household financial control system · v22.3</div>
       </div>
 
       ${renderPageTabs()}
