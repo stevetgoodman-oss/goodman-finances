@@ -91,6 +91,127 @@ main {
   box-shadow: 0 8px 18px rgba(11,31,58,0.18);
 }
 
+
+.page-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  gap: 8px;
+  margin: 0 -16px 16px;
+  padding: 10px 16px;
+  background: rgba(243, 246, 250, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.7);
+  overflow-x: auto;
+}
+
+.page-tabs button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 18px;
+  font-weight: 850;
+  background: #E2E8F0;
+  color: var(--navy);
+  white-space: nowrap;
+}
+
+.page-tabs button.active {
+  background: var(--navy);
+  color: white;
+  box-shadow: 0 8px 18px rgba(11,31,58,0.18);
+}
+
+.bottom-nav {
+  position: fixed;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  width: min(720px, calc(100% - 24px));
+  z-index: 50;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding: 8px;
+  border-radius: 26px;
+  background: rgba(255,255,255,0.94);
+  border: 1px solid rgba(226,232,240,0.9);
+  box-shadow: 0 14px 40px rgba(15,23,42,0.18);
+  backdrop-filter: blur(14px);
+}
+
+.bottom-nav button {
+  border: 0;
+  border-radius: 20px;
+  padding: 8px 4px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 850;
+  display: grid;
+  gap: 2px;
+  place-items: center;
+}
+
+.bottom-nav button .nav-icon {
+  font-size: 21px;
+  line-height: 1;
+}
+
+.bottom-nav button .nav-label {
+  font-size: 11px;
+}
+
+.bottom-nav button.active {
+  background: #E2E8F0;
+  color: var(--navy);
+}
+
+.settings-accordion {
+  margin-bottom: 12px;
+}
+
+.settings-accordion > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.settings-accordion > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-accordion-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.settings-accordion-title {
+  font-size: 22px;
+  line-height: 1.1;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: var(--navy);
+}
+
+.settings-accordion-meta {
+  color: var(--muted);
+  font-size: 14px;
+  margin-top: 6px;
+  line-height: 1.35;
+}
+
+.chevron {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--muted);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
 .mode-toggle {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1511,7 +1632,7 @@ function transactionDbRow(t) {
     parent: t.parent || "",
     sub: t.sub || "",
     note: t.note || "",
-    type: t.type || "expense",
+    type: t.type || "obligation",
     hidden: !!t.hidden,
     is_reimbursement: !!t.is_reimbursement
   };
@@ -2032,6 +2153,71 @@ const categoryBehaviour = {
   "Buffer / Price Increases": "spend"
 };
 
+
+function scrollToSection(id) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderBottomNav() {
+  const items = [
+    { id: "wealth", label: "Wealth", icon: "◔" },
+    { id: "dashboard", label: "Budget", icon: "▣" },
+    { id: "transactions", label: "Txns", icon: "↕" },
+    { id: "settings", label: "Settings", icon: "⚙" }
+  ];
+
+  return `
+    <nav class="bottom-nav" aria-label="Primary navigation">
+      ${items.map(item => `
+        <button class="${activeTab === item.id ? "active" : ""}" onclick="setTab('${item.id}')">
+          <span class="nav-icon">${item.icon}</span>
+          <span class="nav-label">${item.label}</span>
+        </button>
+      `).join("")}
+    </nav>
+  `;
+}
+
+function renderPageTabs() {
+  const tabsByPage = {
+    wealth: [
+      ["wealth-overview", "Overview"],
+      ["wealth-assets", "Assets"],
+      ["wealth-liquidity", "Cash"],
+      ["wealth-update", "Update"]
+    ],
+    dashboard: [
+      ["budget-overview", "Overview"],
+      ["budget-upcoming", "Upcoming"],
+      ["budget-categories", "Categories"],
+      ["budget-review", "Review"]
+    ],
+    transactions: [
+      ["tx-import", "Import"],
+      ["tx-add", "Add"],
+      ["tx-review", "Review"],
+      ["tx-history", "History"]
+    ],
+    settings: [
+      ["settings-income", "Income"],
+      ["settings-expenses", "Expenses"],
+      ["settings-mapping", "Mapping"],
+      ["settings-categories", "Categories"]
+    ]
+  };
+
+  const items = tabsByPage[activeTab] || tabsByPage.wealth;
+
+  return `
+    <div class="page-tabs">
+      ${items.map((item, index) => `
+        <button class="${index === 0 ? "active" : ""}" onclick="scrollToSection('${item[0]}')">${item[1]}</button>
+      `).join("")}
+    </div>
+  `;
+}
+
 function setCashflowWindow(days) {
   cashflowWindowDays = days;
   render();
@@ -2057,7 +2243,7 @@ function isTargetCategory(parent) {
 }
 
 function transactionCountsForBudget(t) {
-  return t.type === "expense" || !!t.is_reimbursement;
+  return t.type === "obligation" || !!t.is_reimbursement;
 }
 
 function transactionCountsForIncome(t) {
@@ -2231,7 +2417,7 @@ function addTransaction(e) {
   const amount = parseFloat(form.amount.value);
   const parent = form.parent.value;
 
-  let type = "expense";
+  let type = "obligation";
   if (parent === "Income") type = "income";
   if (parent === "Needs Review") type = "needs_review";
 
@@ -2317,7 +2503,7 @@ async function saveEditedTransaction(e) {
   t.is_reimbursement = isReimbursement;
 
   if (isReimbursement) {
-    t.type = "expense";
+    t.type = "obligation";
   } else if (parent === "Income") {
     t.type = "income";
   } else if (parent === "Needs Review") {
@@ -2326,7 +2512,7 @@ async function saveEditedTransaction(e) {
     t.type = "ignored";
     t.hidden = true;
   } else {
-    t.type = "expense";
+    t.type = "obligation";
   }
 
   if (!isReimbursement && form.rememberMapping && form.rememberMapping.checked && form.mappingPattern.value.trim()) {
@@ -2461,7 +2647,7 @@ function classifyTransaction(description, amount) {
 
   // Known payments that look like transfers but are real expenses
   if (d.includes("STARFISH SWIM")) {
-    return { type: "expense", parent: "Kids", sub: "Kids swimming lessons", hidden: false };
+    return { type: "obligation", parent: "Kids", sub: "Kids swimming lessons", hidden: false };
   }
 
   // Manual/adhoc incoming transfers should be reviewed, not hidden
@@ -2486,7 +2672,7 @@ function classifyTransaction(description, amount) {
 
   if (learnedRule) {
     return {
-      type: learnedRule.parent_category === "Income" ? "income" : "expense",
+      type: learnedRule.parent_category === "Income" ? "income" : "obligation",
       parent: learnedRule.parent_category,
       sub: learnedRule.sub_category,
       hidden: false
@@ -2821,7 +3007,7 @@ function renderWealth() {
   `;
 
   return `
-    <section class="hero-card">
+    <section class="hero-card" id="wealth-overview">
       <div class="hero-label">Net wealth</div>
       <div class="hero-value">${dollars(currentTotals.netWealth)}</div>
       <div class="hero-context">
@@ -2848,7 +3034,7 @@ function renderWealth() {
       </div>
     </section>
 
-    <div class="section-title">
+    <div class="section-title" id="wealth-assets">
       <h2>Wealth Snapshot</h2>
       <span>Movement since ${wealth.baselineDate}</span>
     </div>
@@ -3061,63 +3247,41 @@ function subOptions(parent, selected = "") {
 
 function renderDashboard() {
   const monthlySummary = getMonthlySummary();
-  const accrualSummary = getAccrualSummary();
   const monthlyParentTotals = getThisMonthParentTotals();
-  const accrualParentTotals = getAccrualParentTotals();
-  const monthsElapsed = monthsElapsedSinceBudgetStart();
   const needsReview = getNeedsReviewTransactions();
   const needsReviewCount = needsReview.length;
   const needsReviewTotal = needsReview.reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
-  const monthlyBudgetTotal = Object.values(budgets).reduce((sum, amount) => sum + amount, 0);
   const today = new Date();
-  const budgetStart = new Date(budgetStartDate);
-  const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const currentMonthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-  const daysInCurrentMonth = currentMonthEnd.getDate();
-  const accrualStart = budgetStart > currentMonthStart ? budgetStart : currentMonthStart;
-  const msPerDay = 1000 * 60 * 60 * 24;
-  const daysElapsedThisMonth = today < accrualStart
-    ? 0
-    : Math.floor((today - accrualStart) / msPerDay) + 1;
-
-  const scheduledCategories = getScheduledCategoriesSet();
-  const flexibleBudgetTotal = Object.entries(budgets)
-    .filter(([parent]) => !scheduledCategories.has(parent))
-    .reduce((sum, [, amount]) => sum + amount, 0);
-  const flexibleBudgetAccruedToDate = flexibleBudgetTotal * (daysElapsedThisMonth / daysInCurrentMonth);
-
-  const obligationsDueThisMonth = getCashflowsDueToDateThisMonth("obligation", today);
-  const obligationsScheduledThisMonth = getCashflowsScheduledThisMonth("obligation", today);
+  const expensesDueThisMonth = getCashflowsDueToDateThisMonth("obligation", today);
+  const expensesScheduledThisMonth = getCashflowsScheduledThisMonth("obligation", today);
   const incomeScheduledThisMonth = getCashflowsScheduledThisMonth("income", today);
 
-  const obligationsDueToDateTotal = cashflowTotal(obligationsDueThisMonth);
-  const obligationsScheduledMonthTotal = cashflowTotal(obligationsScheduledThisMonth);
+  const plannedSpendSoFar = cashflowTotal(expensesDueThisMonth);
+  const plannedSpendThisMonth = cashflowTotal(expensesScheduledThisMonth);
   const expectedMonthlyIncome = cashflowTotal(incomeScheduledThisMonth);
-  const budgetAccruedToDate = flexibleBudgetAccruedToDate + obligationsDueToDateTotal;
-  const scheduledMonthlyOutflows = flexibleBudgetTotal + obligationsScheduledMonthTotal;
-  const expectedMonthlySurplus = expectedMonthlyIncome - scheduledMonthlyOutflows;
-  const expectedAvailableAfterObligations = expectedMonthlyIncome - obligationsScheduledMonthTotal;
-  const expectedIncomeReceivedPct = expectedMonthlyIncome ? Math.min((monthlySummary.income / expectedMonthlyIncome) * 100, 100) : 0;
-  const spendVsPlanBalance = budgetAccruedToDate - monthlySummary.expenses;
+  const spendVsPlanBalance = plannedSpendSoFar - monthlySummary.expenses;
 
-  const upcomingObligations = getUpcomingCashflows(cashflowWindowDays, "obligation", today);
+  const upcomingExpenses = getUpcomingCashflows(cashflowWindowDays, "obligation", today);
   const upcomingIncome = getUpcomingCashflows(cashflowWindowDays, "income", today);
-  const upcomingObligationsTotal = cashflowTotal(upcomingObligations);
+  const upcomingExpensesTotal = cashflowTotal(upcomingExpenses);
   const upcomingIncomeTotal = cashflowTotal(upcomingIncome);
   const currentAvailableCash = toNumber(wealth.current.householdCash);
-  const expectedAvailableCash = currentAvailableCash + upcomingIncomeTotal - upcomingObligationsTotal;
+  const expectedAvailableCash = currentAvailableCash + upcomingIncomeTotal - upcomingExpensesTotal;
 
-  const activeTotals = viewMode === "monthly" ? monthlyParentTotals : accrualParentTotals;
-  const activeTitle = viewMode === "monthly" ? "This Month vs Budget" : "Accrual Balance by Category";
-  const activeSubtitle = viewMode === "monthly" ? "Month-to-date control" : "Accrual truth";
-  const activeNote = viewMode === "monthly"
-    ? "Monthly mode compares actual spend against flexible budget accrued so far plus scheduled obligations due."
-    : "Accrual mode smooths annual, quarterly and uneven bills from the budget start date.";
+  const parentPlanTotals = {};
+  expensesScheduledThisMonth.forEach(item => {
+    parentPlanTotals[item.parent_category] = (parentPlanTotals[item.parent_category] || 0) + Number(item.amount || 0);
+  });
+
+  const parentPlanDueTotals = {};
+  expensesDueThisMonth.forEach(item => {
+    parentPlanDueTotals[item.parent_category] = (parentPlanDueTotals[item.parent_category] || 0) + Number(item.amount || 0);
+  });
 
   let biggestDriver = "No spending yet";
   let biggestDriverAmount = 0;
-  const driverEntries = Object.entries(activeTotals)
+  const driverEntries = Object.entries(monthlyParentTotals)
     .filter(([parent, amount]) => amount > 0)
     .sort((a, b) => b[1] - a[1]);
 
@@ -3127,15 +3291,15 @@ function renderDashboard() {
   }
 
   const healthCards = `
-    <div class="health-grid">
+    <div class="health-grid" id="budget-review">
       <div class="health-card">
-        <span class="label">Budget accrued</span>
-        <strong class="value">${dollars(accrualSummary.totalBudgetAccrued)}</strong>
-        <div class="note">Since ${budgetStartDate}</div>
+        <span class="label">Planned this month</span>
+        <strong class="value">${dollars(plannedSpendThisMonth)}</strong>
+        <div class="note">Scheduled expenses</div>
       </div>
       <div class="health-card">
         <span class="label">Actual spend</span>
-        <strong class="value">${dollars(accrualSummary.totalActualSpent)}</strong>
+        <strong class="value">${dollars(monthlySummary.expenses)}</strong>
         <div class="note">Matched transactions</div>
       </div>
       <div class="health-card">
@@ -3146,135 +3310,95 @@ function renderDashboard() {
     </div>
   `;
 
-  const categoryRows = Object.keys(budgets).map(parent => {
-    const monthlyBudget = budgets[parent];
-    const isScheduledCategory = viewMode === "monthly" && scheduledCategories.has(parent);
-    const scheduledMonthTotalForParent = obligationsScheduledThisMonth
-      .filter(o => o.parent_category === parent)
-      .reduce((sum, o) => sum + Number(o.amount || 0), 0);
-    const scheduledDueTotalForParent = obligationsDueThisMonth
-      .filter(o => o.parent_category === parent)
-      .reduce((sum, o) => sum + Number(o.amount || 0), 0);
+  const plannedParents = [...new Set([
+    ...Object.keys(parentPlanTotals),
+    ...Object.keys(monthlyParentTotals)
+  ])].filter(parent => parent !== "Income" && parent !== "Needs Review" && parent !== "Exclude");
 
-    const comparisonBudget = viewMode === "monthly"
-      ? isScheduledCategory
-        ? scheduledDueTotalForParent
-        : monthlyBudget
-      : monthlyBudget * monthsElapsed;
+  const categoryRows = plannedParents.length
+    ? plannedParents.map(parent => {
+        const plannedMonth = parentPlanTotals[parent] || 0;
+        const plannedDue = parentPlanDueTotals[parent] || 0;
+        const actual = monthlyParentTotals[parent] || 0;
+        const difference = plannedDue - actual;
+        const pct = plannedDue ? Math.min((actual / plannedDue) * 100, 100) : actual > 0 ? 100 : 0;
 
-    const actual = activeTotals[parent] || 0;
+        const resultText = plannedDue === 0 && actual > 0
+          ? `${dollars(actual)} unplanned`
+          : difference >= 0
+          ? `${dollars(difference)} remaining`
+          : `${dollars(Math.abs(difference))} over`;
 
-    let resultText = getCategoryResultText(parent, actual, comparisonBudget, viewMode);
-    let resultClass = getCategoryResultClass(parent, actual, comparisonBudget);
-    let status = getCategoryStatus(actual, comparisonBudget || monthlyBudget, parent);
+        const resultClass = plannedDue === 0 && actual > 0
+          ? "bad"
+          : difference >= 0
+          ? "good"
+          : "bad";
 
-    if (isScheduledCategory) {
-      const difference = comparisonBudget - actual;
+        const status = plannedDue === 0 && actual > 0
+          ? { label: "Unplanned", cls: "status-bad", fill: "progress-fill bad", pct }
+          : difference >= 0
+          ? { label: "On plan", cls: "status-good", fill: "progress-fill", pct }
+          : { label: "Over", cls: "status-bad", fill: "progress-fill bad", pct };
 
-      if (comparisonBudget === 0 && actual === 0) {
-        resultText = "Nothing due yet";
-        resultClass = "good";
-        status = { label: "On track", cls: "status-good", fill: "progress-fill", pct: 0 };
-      } else if (difference <= 0) {
-        resultText = difference === 0 ? "On track" : dollars(Math.abs(difference)) + " ahead";
-        resultClass = "good";
-        status = { label: "On track", cls: "status-good", fill: "progress-fill", pct: 100 };
-      } else {
-        resultText = dollars(difference) + " due";
-        resultClass = "bad";
-        status = {
-          label: "Payment due",
-          cls: "status-bad",
-          fill: "progress-fill bad",
-          pct: comparisonBudget ? Math.min((actual / comparisonBudget) * 100, 100) : 0
-        };
-      }
-    }
+        const subTotals = getSubTotals(parent, "month");
+        const scheduledItems = expensesScheduledThisMonth.filter(item => item.parent_category === parent);
 
-    const subTotals = getSubTotals(parent, viewMode === "monthly" ? "month" : "accrual");
-
-    const topSubText = viewMode === "monthly"
-      ? isScheduledCategory
-        ? `${dollars(actual)} paid · ${dollars(comparisonBudget)} due so far`
-        : `${dollars(actual)} of ${dollars(monthlyBudget)} used`
-      : `Accrued ${dollars(comparisonBudget)} · Spent ${dollars(actual)}`;
-
-    const detailLine = viewMode === "monthly"
-      ? isScheduledCategory
-        ? `Scheduled this month: ${dollars(scheduledMonthTotalForParent)} · Due so far: ${dollars(scheduledDueTotalForParent)}`
-        : `Monthly budget: ${dollars(monthlyBudget)} · Actual: ${dollars(actual)}`
-      : `Monthly accrual: ${dollars(monthlyBudget)} · Months elapsed: ${monthsElapsed}`;
-
-    const emptyText = viewMode === "monthly"
-      ? "No spend this month"
-      : "No spend since budget start";
-
-    const subBreakdown = Object.keys(subTotals).length
-      ? Object.entries(subTotals).sort((a, b) => b[1] - a[1]).map(([sub, amount]) => `
-        <div class="sub-row"><span>${sub}</span><strong>${dollars(amount)}</strong></div>
-      `).join("")
-      : `<div class="empty">${emptyText}</div>`;
-
-    return `
-      <details class="category-card">
-        <summary>
-          <div class="category-top">
-            <div>
-              <div class="category-name">${parent}</div>
-              <div class="category-sub">${topSubText}</div>
-              <span class="status-chip ${status.cls}">${status.label}</span>
-            </div>
-            <div class="category-amount ${resultClass}">
-              ${resultText}
-            </div>
-          </div>
-          <div class="progress">
-            <div class="${status.fill}" style="width:${status.pct}%"></div>
-          </div>
-        </summary>
-        <div class="budget-line">${detailLine}</div>
-        <div>${subBreakdown}</div>
-      </details>
-    `;
-  }).join("");
+        return `
+          <details class="category-card">
+            <summary>
+              <div>
+                <strong>${parent}</strong>
+                <span>${dollars(actual)} spent · ${dollars(plannedDue)} due so far</span>
+                <span class="${status.cls}">${status.label}</span>
+              </div>
+              <div class="result ${resultClass}">${resultText}</div>
+            </summary>
+            <div class="progress"><div class="${status.fill}" style="width:${status.pct}%"></div></div>
+            <div class="metric-row"><span>Scheduled this month</span><strong>${dollars(plannedMonth)}</strong></div>
+            <div class="metric-row"><span>Due so far</span><strong>${dollars(plannedDue)}</strong></div>
+            <div class="metric-row"><span>Actual spend</span><strong>${dollars(actual)}</strong></div>
+            ${
+              scheduledItems.length
+                ? `<div class="sub-breakdown">
+                    ${scheduledItems.map(item => `<div class="sub-row"><span>${formatShortDate(item.occurrence_date)} · ${item.sub_category}</span><strong>${dollars(item.amount)}</strong></div>`).join("")}
+                  </div>`
+                : `<div class="empty">No scheduled expenses for this category this month.</div>`
+            }
+            ${
+              Object.keys(subTotals).length
+                ? `<div class="sub-breakdown">
+                    <strong>Actual by subcategory</strong>
+                    ${Object.entries(subTotals).sort((a,b) => b[1]-a[1]).map(([sub, amount]) => `
+                      <div class="sub-row"><span>${sub}</span><strong>${dollars(amount)}</strong></div>
+                    `).join("")}
+                  </div>`
+                : ""
+            }
+          </details>
+        `;
+      }).join("")
+    : `<section class="panel"><p class="muted">No scheduled expenses yet. Add planned expenses in Settings.</p></section>`;
 
   return `
-    <section class="hero-card">
+    <section class="hero-card" id="budget-overview">
       <div class="hero-label">Tracking this month</div>
-      <div class="hero-value">
-        ${
-          viewMode === "monthly"
-            ? spendVsPlanBalance >= 0
-              ? dollars(spendVsPlanBalance) + " under plan"
-              : dollars(Math.abs(spendVsPlanBalance)) + " over plan"
-            : accrualSummary.balance >= 0
-              ? dollars(accrualSummary.balance) + " ahead"
-              : dollars(Math.abs(accrualSummary.balance)) + " behind"
-        }
-      </div>
-      <div class="hero-context">
-        ${
-          viewMode === "monthly"
-            ? "Based on spend so far vs plan"
-            : "Based on smoothed budget vs actual spend since budget start"
-        }
-      </div>
-      <div class="hero-grid">
-        <div class="hero-metric">
-          <span>${viewMode === "monthly" ? "Plan so far" : "Budget accrued"}</span>
-          <strong>${viewMode === "monthly" ? dollars(budgetAccruedToDate) : dollars(accrualSummary.totalBudgetAccrued)}</strong>
+      <div class="hero-value">${dollars(Math.abs(spendVsPlanBalance))} ${spendVsPlanBalance >= 0 ? "under plan" : "over plan"}</div>
+      <div class="hero-context">Based on actual spend vs scheduled expenses due so far</div>
+      <div class="hero-metrics">
+        <div>
+          <span>Plan so far</span>
+          <strong>${dollars(plannedSpendSoFar)}</strong>
         </div>
-        <div class="hero-metric">
-          <span>${viewMode === "monthly" ? "Spent so far" : "Actual spend"}</span>
-          <strong>${viewMode === "monthly" ? dollars(monthlySummary.expenses) : dollars(accrualSummary.totalActualSpent)}</strong>
+        <div>
+          <span>Spent so far</span>
+          <strong>${dollars(monthlySummary.expenses)}</strong>
         </div>
       </div>
-      <div class="hero-context">
-        Biggest spend: <strong>${biggestDriver}${biggestDriverAmount ? " · " + dollars(biggestDriverAmount) : ""}</strong>
-      </div>
+      <div class="hero-context">Biggest spend: <strong>${biggestDriver}${biggestDriverAmount ? " · " + dollars(biggestDriverAmount) : ""}</strong></div>
     </section>
 
-    <div class="section-title">
+    <div class="section-title" id="budget-upcoming">
       <h2>Upcoming Cashflow</h2>
       <span>Known commitments only</span>
     </div>
@@ -3285,12 +3409,12 @@ function renderDashboard() {
       </div>
       <div class="metric-row"><span>Household cash</span><strong>${dollars(currentAvailableCash)}</strong></div>
       <div class="metric-row"><span>Expected income</span><strong class="good">+${dollars(upcomingIncomeTotal)}</strong></div>
-      <div class="metric-row"><span>Scheduled obligations</span><strong class="bad">-${dollars(upcomingObligationsTotal)}</strong></div>
-      <div class="metric-row total"><span>Available after obligations</span><strong>${dollars(expectedAvailableCash)}</strong></div>
+      <div class="metric-row"><span>Scheduled expenses</span><strong class="bad">-${dollars(upcomingExpensesTotal)}</strong></div>
+      <div class="metric-row total"><span>Available after expenses</span><strong>${dollars(expectedAvailableCash)}</strong></div>
       <details>
         <summary class="muted">View scheduled cashflows</summary>
         ${
-          [...upcomingIncome.map(i => ({ ...i, direction: "+" })), ...upcomingObligations.map(o => ({ ...o, direction: "-" }))]
+          [...upcomingIncome.map(i => ({ ...i, direction: "+" })), ...upcomingExpenses.map(o => ({ ...o, direction: "-" }))]
             .sort((a, b) => a.occurrenceDate - b.occurrenceDate)
             .slice(0, 10)
             .map(item => `
@@ -3302,63 +3426,8 @@ function renderDashboard() {
 
     ${healthCards}
 
-    <div class="section-title">
-      <h2>Dashboard view</h2>
-      <span>${activeSubtitle}</span>
-    </div>
-    <div class="mode-toggle">
-      <button class="${viewMode === "monthly" ? "active" : ""}" onclick="setViewMode('monthly')">Monthly</button>
-      <button class="${viewMode === "accrual" ? "active" : ""}" onclick="setViewMode('accrual')">Accrual</button>
-    </div>
-    <div class="mode-note">${activeNote}</div>
-
-    <details class="panel">
-      <summary><strong>Financial details</strong></summary>
-    <div class="section-title">
-      <h2>This Month Cash View</h2>
-      <span>Income timing is separate from spend tracking</span>
-    </div>
-    <section class="summary">
-      <p class="muted">Expected income and obligations are based on configured scheduled cashflows, not hardcoded values or daily accrual.</p>
-
-      <div class="metric-row"><span>Expected income this month</span><strong>${dollars(expectedMonthlyIncome)}</strong></div>
-      <div class="metric-row"><span>Income received so far</span><strong>${dollars(monthlySummary.income)}</strong></div>
-      <div class="progress">
-        <div class="progress-fill" style="width:${expectedIncomeReceivedPct}%"></div>
-      </div>
-
-      <div class="metric-row"><span>Income scheduled this month</span><strong>${dollars(expectedMonthlyIncome)}</strong></div>
-      <div class="metric-row"><span>Obligations scheduled this month</span><strong>${dollars(obligationsScheduledMonthTotal)}</strong></div>
-      <div class="metric-row"><span>Obligations due so far</span><strong>${dollars(obligationsDueToDateTotal)}</strong></div>
-      <div class="metric-row"><span>Available after obligations</span><strong>${dollars(expectedAvailableAfterObligations)}</strong></div>
-      <div class="metric-row"><span>Flexible expected expenses</span><strong>${dollars(flexibleBudgetTotal)}</strong></div>
-      <div class="metric-row total"><span>Total scheduled outflows</span><strong>${dollars(scheduledMonthlyOutflows)}</strong></div>
-
-      <div class="metric-row"><span>Expenses paid so far</span><strong>${dollars(monthlySummary.expenses)}</strong></div>
-      <div class="metric-row total"><span>Expected monthly surplus</span><strong class="${expectedMonthlySurplus >= 0 ? "good" : "bad"}">${dollars(expectedMonthlySurplus)}</strong></div>
-      <div class="metric-row"><span>Actual cash position so far</span><strong class="${monthlySummary.surplus >= 0 ? "good" : "bad"}">${dollars(monthlySummary.surplus)}</strong></div>
-    </section>
-
-    </details>
-
-    <div class="section-title">
-      <h2>Category Balance</h2>
-      <span>Accrual truth</span>
-    </div>
-    <section class="summary">
-      <p class="muted">Accrual view from ${budgetStartDate}. This smooths annual, quarterly and uneven bills.</p>
-      <div class="metric-row"><span>Budget accrued</span><strong>${dollars(accrualSummary.totalBudgetAccrued)}</strong></div>
-      <div class="metric-row"><span>Actual spent</span><strong>${dollars(accrualSummary.totalActualSpent)}</strong></div>
-      <div class="metric-row total">
-        <span>Overall balance</span>
-        <strong class="${accrualSummary.balance >= 0 ? "good" : "bad"}">
-          ${accrualSummary.balance >= 0 ? dollars(accrualSummary.balance) + " ahead" : dollars(Math.abs(accrualSummary.balance)) + " behind"}
-        </strong>
-      </div>
-    </section>
-
-    <div class="section-title">
-      <h2>${activeTitle}</h2>
+    <div class="section-title" id="budget-categories">
+      <h2>This Month vs Plan</h2>
       <span>Tap to drill down</span>
     </div>
     ${categoryRows}
@@ -3457,13 +3526,13 @@ function renderCashflowModal() {
     <div class="edit-overlay">
       <div class="edit-sheet">
         <h2>${existing ? "Edit Scheduled Cashflow" : "Add Scheduled Cashflow"}</h2>
-        <p class="muted">Scheduled cashflows control known income and obligations used in upcoming cashflow.</p>
+        <p class="muted">Scheduled cashflows control known income and expenses used in upcoming cashflow.</p>
 
         <form onsubmit="saveCashflowFromForm(event)">
           <input type="hidden" name="id" value="${item.id || ""}" />
 
           <select name="type" required>
-            <option value="obligation" ${item.type === "obligation" ? "selected" : ""}>Obligation</option>
+            <option value="obligation" ${item.type === "obligation" ? "selected" : ""}>Expense</option>
             <option value="income" ${item.type === "income" ? "selected" : ""}>Income</option>
           </select>
 
@@ -3601,7 +3670,7 @@ function renderBudgetModal() {
 
 function renderSettings() {
   const activeIncome = scheduledCashflows.filter(item => item.active !== false && item.type === "income");
-  const activeObligations = scheduledCashflows.filter(item => item.active !== false && item.type !== "income");
+  const activeExpenses = scheduledCashflows.filter(item => item.active !== false && item.type !== "income");
   const inactiveCashflows = scheduledCashflows.filter(item => item.active === false);
   const activeMappings = mappings.filter(item => item.active !== false);
   const inactiveMappings = mappings.filter(item => item.active === false);
@@ -3614,7 +3683,7 @@ function renderSettings() {
           <div class="settings-card-title">${item.name}</div>
           <div class="settings-card-meta">${item.frequency} · next ${formatShortDate(item.next_due_date)}</div>
           <div class="settings-card-meta">${item.parent_category} · ${item.sub_category}</div>
-          <span class="badge ${item.type === "income" ? "income" : ""} ${item.active === false ? "off" : ""}">${item.active === false ? "Inactive" : item.type === "income" ? "Income" : "Obligation"}</span>
+          <span class="badge ${item.type === "income" ? "income" : ""} ${item.active === false ? "off" : ""}">${item.active === false ? "Inactive" : item.type === "income" ? "Income" : "Expense"}</span>
         </div>
         <div class="settings-card-amount">${item.type === "income" ? "+" : "-"}${dollarsExact(item.amount)}</div>
       </div>
@@ -3661,10 +3730,10 @@ function renderSettings() {
     <section class="hero-card">
       <div class="hero-label">Settings</div>
       <div class="hero-value">Rules & cashflows</div>
-      <div class="hero-context">Configure known income, obligations and remembered transaction mappings without changing code.</div>
+      <div class="hero-context">Configure known income, expenses and remembered transaction mappings without changing code.</div>
     </section>
 
-    <div class="section-title">
+    <div class="section-title" id="settings-income">
       <h2>Scheduled Income</h2>
       <span>${activeIncome.length} active</span>
     </div>
@@ -3674,27 +3743,18 @@ function renderSettings() {
     </section>
     ${activeIncome.length ? activeIncome.map(renderCashflowCard).join("") : `<p class="muted">No active income configured.</p>`}
 
-    <div class="section-title">
-      <h2>Scheduled Obligations</h2>
-      <span>${activeObligations.length} active</span>
+    <div class="section-title" id="settings-expenses">
+      <h2>Scheduled Expenses</h2>
+      <span>${activeExpenses.length} active</span>
     </div>
     <section class="panel">
       <p class="muted">Known recurring bills are counted when they are due, not smoothed daily.</p>
-      <button class="primary" onclick="setEditingCashflow('new')">Add Obligation</button>
+      <button class="primary" onclick="setEditingCashflow('new')">Add Expense</button>
     </section>
-    ${activeObligations.length ? activeObligations.map(renderCashflowCard).join("") : `<p class="muted">No active obligations configured.</p>`}
+    ${activeExpenses.length ? activeExpenses.map(renderCashflowCard).join("") : `<p class="muted">No active expenses configured.</p>`}
     ${inactiveCashflows.length ? `<details class="panel"><summary><strong>Inactive cashflows</strong></summary>${inactiveCashflows.map(renderCashflowCard).join("")}</details>` : ""}
 
-    <div class="section-title">
-      <h2>Monthly Budgets</h2>
-      <span>${budgetEntries.length} categories</span>
-    </div>
-    <section class="panel">
-      <p class="muted">Edit monthly budget envelopes without changing code. Parent categories remain controlled by the app.</p>
-    </section>
-    ${budgetEntries.map(renderBudgetCard).join("")}
-
-    <div class="section-title">
+    <div class="section-title" id="settings-mapping">
       <h2>Mapping Rules</h2>
       <span>${activeMappings.length} active</span>
     </div>
@@ -3705,9 +3765,17 @@ function renderSettings() {
     ${activeMappings.length ? activeMappings.map(renderMappingCard).join("") : `<p class="muted">No active mapping rules yet.</p>`}
     ${inactiveMappings.length ? `<details class="panel"><summary><strong>Inactive mapping rules</strong></summary>${inactiveMappings.map(renderMappingCard).join("")}</details>` : ""}
 
+    <div class="section-title" id="settings-categories">
+      <h2>Categories</h2>
+      <span>${customSubcategories.length} custom</span>
+    </div>
+    <section class="panel">
+      <p class="muted">Parent categories remain controlled by the app. Custom subcategories are shared through Supabase and appear in dropdowns.</p>
+    </section>
+
     ${renderCashflowModal()}
     ${renderMappingModal()}
-    ${renderBudgetModal()}
+
   `;
 }
 
@@ -3741,13 +3809,13 @@ function renderTransactionHistory() {
     : `<p class="muted">No transactions to show.</p>`;
 
   return `
-    <section class="panel">
+    <section class="panel" id="tx-import">
       <h2>Import CSV</h2>
       <p class="muted">Import CBA CSVs. Transfers and credit card repayments are hidden. ATM withdrawals and unmapped items go to Needs Review.</p>
       <input type="file" accept=".csv" multiple onchange="handleCSVUpload(event)" />
     </section>
 
-    <section class="panel">
+    <section class="panel" id="tx-add">
       <h2>Add Transaction</h2>
       <form onsubmit="addTransaction(event)">
         <input type="date" name="date" required />
@@ -3764,7 +3832,7 @@ function renderTransactionHistory() {
       </form>
     </section>
 
-    <div class="section-title">
+    <div class="section-title" id="tx-review">
       <h2>Needs Review</h2>
       <span>${needsReview.length} items · ${dollars(needsReviewTotal)} unallocated</span>
     </div>
@@ -3800,17 +3868,14 @@ function render() {
     <main>
       <div class="app-header">
         <h1 class="app-title">Goodman Finances Inc.</h1>
-        <div class="app-subtitle">Household financial control system · v21</div>
+        <div class="app-subtitle">Household financial control system · v22</div>
       </div>
 
-      <div class="tabs">
-        <button class="${activeTab === "wealth" ? "active" : ""}" onclick="setTab('wealth')">Wealth</button>
-        <button class="${activeTab === "dashboard" ? "active" : ""}" onclick="setTab('dashboard')">Budget</button>
-        <button class="${activeTab === "transactions" ? "active" : ""}" onclick="setTab('transactions')">Transactions</button>
-        <button class="${activeTab === "settings" ? "active" : ""}" onclick="setTab('settings')">Settings</button>
-      </div>
+      ${renderPageTabs()}
 
       ${bodyContent}
+
+      ${renderBottomNav()}
     </main>
   `;
 
