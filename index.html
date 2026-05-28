@@ -167,6 +167,76 @@ main {
   color: var(--navy);
 }
 
+
+.bottom-nav button svg {
+  width: 25px;
+  height: 25px;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.plan-card summary {
+  display: block;
+}
+
+.plan-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.plan-card-title {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--navy);
+  letter-spacing: -0.03em;
+}
+
+.plan-card-status {
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 900;
+  padding: 5px 10px;
+  border-radius: 999px;
+}
+
+.plan-card-status.good {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.plan-card-status.bad {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.plan-card-meta {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.35;
+  margin-bottom: 10px;
+}
+
+.plan-card-result {
+  font-size: 21px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  margin-bottom: 10px;
+}
+
+.plan-card-result.good {
+  color: var(--green);
+}
+
+.plan-card-result.bad {
+  color: var(--red);
+}
+
 .settings-accordion {
   margin-bottom: 12px;
 }
@@ -2159,19 +2229,29 @@ function scrollToSection(id) {
   if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function navIcon(id) {
+  const icons = {
+    wealth: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9h9"/><path d="M21 12a9 9 0 1 1-9-9"/></svg>`,
+    dashboard: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="3"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/></svg>`,
+    transactions: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10"/><path d="M14 4l3 3-3 3"/><path d="M17 17H7"/><path d="M10 14l-3 3 3 3"/></svg>`,
+    settings: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10"/><circle cx="17" cy="7" r="2"/><path d="M20 17H10"/><circle cx="7" cy="17" r="2"/></svg>`
+  };
+  return icons[id] || "";
+}
+
 function renderBottomNav() {
   const items = [
-    { id: "wealth", label: "Wealth", icon: "◔" },
-    { id: "dashboard", label: "Budget", icon: "▣" },
-    { id: "transactions", label: "Txns", icon: "↕" },
-    { id: "settings", label: "Settings", icon: "⚙" }
+    { id: "wealth", label: "Wealth" },
+    { id: "dashboard", label: "Budget" },
+    { id: "transactions", label: "Txns" },
+    { id: "settings", label: "Settings" }
   ];
 
   return `
     <nav class="bottom-nav" aria-label="Primary navigation">
       ${items.map(item => `
         <button class="${activeTab === item.id ? "active" : ""}" onclick="setTab('${item.id}')">
-          <span class="nav-icon">${item.icon}</span>
+          <span class="nav-icon">${navIcon(item.id)}</span>
           <span class="nav-label">${item.label}</span>
         </button>
       `).join("")}
@@ -2243,7 +2323,7 @@ function isTargetCategory(parent) {
 }
 
 function transactionCountsForBudget(t) {
-  return t.type === "obligation" || !!t.is_reimbursement;
+  return t.type === "expense" || !!t.is_reimbursement;
 }
 
 function transactionCountsForIncome(t) {
@@ -2512,7 +2592,7 @@ async function saveEditedTransaction(e) {
     t.type = "ignored";
     t.hidden = true;
   } else {
-    t.type = "obligation";
+    t.type = "expense";
   }
 
   if (!isReimbursement && form.rememberMapping && form.rememberMapping.checked && form.mappingPattern.value.trim()) {
@@ -2647,7 +2727,7 @@ function classifyTransaction(description, amount) {
 
   // Known payments that look like transfers but are real expenses
   if (d.includes("STARFISH SWIM")) {
-    return { type: "obligation", parent: "Kids", sub: "Kids swimming lessons", hidden: false };
+    return { type: "expense", parent: "Kids", sub: "Kids swimming lessons", hidden: false };
   }
 
   // Manual/adhoc incoming transfers should be reviewed, not hidden
@@ -2672,7 +2752,7 @@ function classifyTransaction(description, amount) {
 
   if (learnedRule) {
     return {
-      type: learnedRule.parent_category === "Income" ? "income" : "obligation",
+      type: learnedRule.parent_category === "Income" ? "income" : "expense",
       parent: learnedRule.parent_category,
       sub: learnedRule.sub_category,
       hidden: false
@@ -3345,16 +3425,16 @@ function renderDashboard() {
         const scheduledItems = expensesScheduledThisMonth.filter(item => item.parent_category === parent);
 
         return `
-          <details class="category-card">
+          <details class="category-card plan-card">
             <summary>
-              <div>
-                <strong>${parent}</strong>
-                <span>${dollars(actual)} spent · ${dollars(plannedDue)} due so far</span>
-                <span class="${status.cls}">${status.label}</span>
+              <div class="plan-card-top">
+                <div class="plan-card-title">${parent}</div>
+                <span class="plan-card-status ${resultClass}">${status.label}</span>
               </div>
-              <div class="result ${resultClass}">${resultText}</div>
+              <div class="plan-card-meta">${dollars(actual)} spent · ${dollars(plannedDue)} due so far</div>
+              <div class="plan-card-result ${resultClass}">${resultText}</div>
+              <div class="progress"><div class="${status.fill}" style="width:${status.pct}%"></div></div>
             </summary>
-            <div class="progress"><div class="${status.fill}" style="width:${status.pct}%"></div></div>
             <div class="metric-row"><span>Scheduled this month</span><strong>${dollars(plannedMonth)}</strong></div>
             <div class="metric-row"><span>Due so far</span><strong>${dollars(plannedDue)}</strong></div>
             <div class="metric-row"><span>Actual spend</span><strong>${dollars(actual)}</strong></div>
@@ -3512,7 +3592,7 @@ function renderCashflowModal() {
   const existing = scheduledCashflows.find(c => String(c.id) === String(editingCashflowId));
   const item = existing || {
     id: "",
-    type: "obligation",
+    type: "expense",
     name: "",
     amount: "",
     frequency: "monthly",
@@ -3868,7 +3948,7 @@ function render() {
     <main>
       <div class="app-header">
         <h1 class="app-title">Goodman Finances Inc.</h1>
-        <div class="app-subtitle">Household financial control system · v22</div>
+        <div class="app-subtitle">Household financial control system · v22.2</div>
       </div>
 
       ${renderPageTabs()}
