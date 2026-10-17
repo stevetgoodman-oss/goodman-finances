@@ -998,6 +998,10 @@ let cashflowModalOpen = false;
 let appLoading = true;
 let appError = "";
 let transactions = [];
+// Transaction writes are permitted only after the complete history has loaded.
+let transactionHistoryReady = false;
+const TRANSACTION_PAGE_SIZE = 500;
+const TRANSACTION_MAX_RECORDS = 100000;
 let scheduledCashflows = [];
 let mappings = [];
 let customSubcategories = [];
@@ -1790,7 +1794,7 @@ function transactionDbRow(t) {
   };
 }
 
-async function supabaseFetch(path, options = {}) {
+async function supabaseRequest(path, options = {}) {
   if (!isSupabaseConfigured()) return null;
 
   const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -1808,7 +1812,12 @@ async function supabaseFetch(path, options = {}) {
     throw new Error(text || `Supabase request failed: ${response.status}`);
   }
 
-  if (response.status === 204) return null;
+  return response;
+}
+
+async function supabaseFetch(path, options = {}) {
+  const response = await supabaseRequest(path, options);
+  if (!response || response.status === 204) return null;
 
   const body = await response.text();
   return body ? JSON.parse(body) : null;
@@ -2123,43 +2132,96 @@ async function deleteMapping(id) {
 }
 
 
-async function syncTransactionsToSupabase() {
-  if (!isSupabaseConfigured()) {
-    localStorage.setItem("transactions", JSON.stringify(transactions));
-    return;
+// Only submit records changed by the current action. Never rewrite the entire
+// local snapshot, and never use an empty list to authorise a table-wide DELETE.
+async function syncTransactionsToSupabase(changedTransactions = []) {
+  if (!Array.isArray(changedTransactions)) {
+    throw new Error("Transaction changes must be an array.");
   }
+  if (!changedTransactions.length) return;
+  if (!transactionHistoryReady) {
+    throw new Error("Cannot write transactions before the full history has loaded.");
+  }
+  if (!isSupabaseConfigured()) return; // Offline: save() retains the local copy.
 
-  ensureTransactionIds();
-
-  const rows = transactions.map(transactionDbRow);
-  const ids = rows.map(r => r.id);
-
-  if (rows.length) {
+  const batchSize = 200;
+  for (let offset = 0; offset < changedTransactions.length; offset += batchSize) {
+    const rows = changedTransactions.slice(offset, offset + batchSize).map(transactionDbRow);
     await supabaseFetch("transactions?on_conflict=id", {
       method: "POST",
-      headers: {
-        Prefer: "resolution=merge-duplicates,return=minimal"
-      },
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
       body: JSON.stringify(rows)
     });
-
-  } else {
-    await supabaseFetch("transactions", {
-      method: "DELETE"
-    });
   }
+}
+
+// Demand exact total counts from PostgREST so a partial response is never
+// silently accepted as complete transaction history.
+async function fetchAllTransactions() {
+  const allRows = [];
+  const seenIds = new Set();
+  let expectedTotal = null;
+
+  for (let offset = 0; offset < TRANSACTION_MAX_RECORDS; offset += TRANSACTION_PAGE_SIZE) {
+    const response = await supabaseRequest("transactions?select=*&order=date.desc,id.asc", {
+      headers: {
+        Range: `${offset}-${offset + TRANSACTION_PAGE_SIZE - 1}`,
+        "Range-Unit": "items",
+        Prefer: "count=exact"
+      }
+    });
+
+    const contentRange = response.headers.get("Content-Range") || "";
+    const rangeMatch = contentRange.match(/\/(\d+)$/);
+    if (!rangeMatch) {
+      throw new Error("Transaction load failed: Supabase did not provide an exact record count.");
+    }
+
+    const reportedTotal = Number(rangeMatch[1]);
+    if (expectedTotal === null) {
+      expectedTotal = reportedTotal;
+      if (expectedTotal > TRANSACTION_MAX_RECORDS) {
+        throw new Error("Transaction history exceeds the supported safety limit.");
+      }
+    } else if (reportedTotal !== expectedTotal) {
+      throw new Error("Transaction data changed during loading; refresh and try again.");
+    }
+
+    const page = await response.json();
+    if (!Array.isArray(page) || page.length > TRANSACTION_PAGE_SIZE) {
+      throw new Error("Supabase returned an invalid transaction page.");
+    }
+
+    for (const row of page) {
+      if (!row || !isUuid(row.id) || seenIds.has(row.id)) {
+        throw new Error("Transaction load contained missing or repeated IDs.");
+      }
+      seenIds.add(row.id);
+      allRows.push(row);
+    }
+
+    if (allRows.length === expectedTotal) return allRows;
+    if (allRows.length > expectedTotal || page.length !== TRANSACTION_PAGE_SIZE) {
+      throw new Error("Transaction history was truncated during loading.");
+    }
+  }
+
+  throw new Error("Transaction pagination reached the safety limit before completing.");
 }
 
 async function loadSharedData() {
   appLoading = true;
   appError = "";
+  transactionHistoryReady = false;
   render();
 
   try {
     if (!isSupabaseConfigured()) {
       await fetchConfigTables();
       await fetchBudgets();
-      transactions = JSON.parse(localStorage.getItem("transactions") || "[]");
+      const localTransactions = JSON.parse(localStorage.getItem("transactions") || "[]");
+      if (!Array.isArray(localTransactions)) throw new Error("Local transaction history is invalid.");
+      transactions = localTransactions;
       wealth = JSON.parse(localStorage.getItem("wealth") || JSON.stringify(defaultWealth));
       wealth = {
         ...defaultWealth,
@@ -2167,6 +2229,7 @@ async function loadSharedData() {
         baseline: { ...defaultWealth.baseline, ...(wealth.baseline || {}) },
         current: { ...defaultWealth.current, ...(wealth.current || {}) }
       };
+      transactionHistoryReady = true;
       appLoading = false;
       render();
       return;
@@ -2175,8 +2238,14 @@ async function loadSharedData() {
     await fetchConfigTables();
     await fetchBudgets();
 
-    const txRows = await supabaseFetch("transactions?select=*&order=date.desc");
-    transactions = (txRows || []).map(row => ({
+    // Stage the response: do not replace the browser cache until every page
+    // and the remaining shared data have loaded successfully.
+    const txRows = await fetchAllTransactions();
+    const cached = JSON.parse(localStorage.getItem("transactions") || "[]");
+    if (Array.isArray(cached) && cached.length > 0 && txRows.length === 0) {
+      throw new Error("Supabase returned an empty history despite a populated browser cache.");
+    }
+    const loadedTransactions = txRows.map(row => ({
       id: row.id,
       date: row.date,
       amount: Number(row.amount || 0),
@@ -2189,45 +2258,86 @@ async function loadSharedData() {
     }));
 
     const wealthRows = await supabaseFetch("wealth?select=*&id=eq.1");
-
+    let loadedWealth;
     if (wealthRows && wealthRows.length && wealthRows[0].data) {
-      wealth = wealthRows[0].data;
+      loadedWealth = wealthRows[0].data;
     } else {
-      wealth = JSON.parse(localStorage.getItem("wealth") || JSON.stringify(defaultWealth));
+      loadedWealth = JSON.parse(localStorage.getItem("wealth") || JSON.stringify(defaultWealth));
+      // Preserve existing wealth fallback behaviour.
+      wealth = loadedWealth;
       await syncWealthToSupabase();
     }
 
-    wealth = {
+    loadedWealth = {
       ...defaultWealth,
-      ...wealth,
-      baseline: { ...defaultWealth.baseline, ...(wealth.baseline || {}) },
-      current: { ...defaultWealth.current, ...(wealth.current || {}) }
+      ...loadedWealth,
+      baseline: { ...defaultWealth.baseline, ...(loadedWealth.baseline || {}) },
+      current: { ...defaultWealth.current, ...(loadedWealth.current || {}) }
     };
 
+    transactions = loadedTransactions;
+    wealth = loadedWealth;
     localStorage.setItem("transactions", JSON.stringify(transactions));
     localStorage.setItem("wealth", JSON.stringify(wealth));
 
+    transactionHistoryReady = true;
     appLoading = false;
     render();
   } catch (error) {
     console.error(error);
-    appError = "Could not load shared data. Check your Supabase tables, keys and policies.";
+    appError = "Could not safely load complete shared data. No transaction changes were sent. Refresh and try again.";
+    transactionHistoryReady = false;
     appLoading = false;
     render();
   }
 }
 
-async function save() {
+async function save(changedTransactions = []) {
+  if (!transactionHistoryReady || appLoading || appError) {
+    alert("Transaction history has not finished loading. Refresh the app before making changes.");
+    return false;
+  }
+  if (!Array.isArray(changedTransactions)) {
+    throw new Error("Transaction changes must be an array.");
+  }
+
   ensureTransactionIds();
   localStorage.setItem("transactions", JSON.stringify(transactions));
   render();
 
   try {
-    await syncTransactionsToSupabase();
+    await syncTransactionsToSupabase(changedTransactions);
+    return true;
   } catch (error) {
     console.error(error);
-    alert("Could not sync transactions to Supabase. Your browser copy is still saved locally.");
+    alert("Could not sync transaction changes to Supabase. Unsynced changes are only on this device. Download a transaction backup from Settings BEFORE refreshing or closing the app.");
+    return false;
   }
+}
+
+// This is a manual, downloadable recovery copy. It does not modify Supabase.
+function downloadTransactionBackup() {
+  if (!transactionHistoryReady || appLoading || appError) {
+    alert("Cannot export a backup until the complete transaction history has loaded.");
+    return;
+  }
+  const exportDate = new Date().toISOString().slice(0, 10);
+  const backup = {
+    format: "goodman-finances-transactions-v1",
+    appVersion: "22.3.2",
+    exportedAt: new Date().toISOString(),
+    transactionCount: transactions.length,
+    transactions
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `goodman-finances-transactions-${exportDate}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function dollars(value, decimals = 0) {
@@ -2583,7 +2693,7 @@ function addTransaction(e) {
   if (parent === "Income") type = "income";
   if (parent === "Needs Review") type = "needs_review";
 
-  transactions.push({
+  const newTransaction = {
     id: uuid(),
     date: form.date.value,
     amount,
@@ -2594,29 +2704,36 @@ function addTransaction(e) {
     hidden: false,
     imported: false,
     is_reimbursement: false
-  });
+  };
+  transactions.push(newTransaction);
 
-  save();
+  save([newTransaction]);
 }
 
 async function deleteTransaction(id) {
   const idString = String(id);
-
-  transactions = transactions.filter(t => String(t.id) !== idString);
-  localStorage.setItem("transactions", JSON.stringify(transactions));
-  render();
+  if (!transactionHistoryReady || appLoading || appError) {
+    alert("Transaction history has not finished loading. Refresh the app before deleting.");
+    return;
+  }
+  if (isSupabaseConfigured() && !isUuid(idString)) {
+    alert("Cannot delete a transaction without a valid record ID.");
+    return;
+  }
 
   try {
-    if (isSupabaseConfigured() && isUuid(idString)) {
+    // Remove from the local view only after Supabase confirms the targeted delete.
+    if (isSupabaseConfigured()) {
       await supabaseFetch(`transactions?id=eq.${encodeURIComponent(idString)}`, {
         method: "DELETE"
       });
-    } else {
-      await syncTransactionsToSupabase();
     }
+    transactions = transactions.filter(t => String(t.id) !== idString);
+    localStorage.setItem("transactions", JSON.stringify(transactions));
+    render();
   } catch (error) {
     console.error(error);
-    alert("Could not delete transaction from Supabase. Refresh the app to confirm whether the transaction still exists in shared data.");
+    alert("Could not delete this transaction from Supabase. It remains visible in the app.");
   }
 }
 
@@ -2688,7 +2805,7 @@ async function saveEditedTransaction(e) {
   }
 
   editingId = null;
-  await save();
+  await save([t]);
 }
 
 function renderEditModal() {
@@ -2865,7 +2982,7 @@ function findColumn(headers, candidates) {
 function importCSVFile(file) {
   const reader = new FileReader();
 
-  reader.onload = function(evt) {
+  reader.onload = async function(evt) {
     const rows = parseCSV(evt.target.result).filter(r => r.length > 1);
 
     if (rows.length < 2) {
@@ -2891,6 +3008,7 @@ function importCSVFile(file) {
 
     const existing = new Set(transactions.map(makeFingerprint));
 
+    const newTransactions = [];
     let imported = 0;
     let skipped = 0;
     let ignored = 0;
@@ -2927,15 +3045,20 @@ function importCSVFile(file) {
 
       existing.add(fingerprint);
       transactions.push(tx);
+      newTransactions.push(tx);
       imported++;
 
       if (tx.hidden) ignored++;
       if (tx.type === "needs_review") needsReview++;
     });
 
-    save();
+    const synced = await save(newTransactions);
 
-    alert(`Import complete. Imported ${imported}. Skipped duplicates ${skipped}. Hidden transfers ${ignored}. Needs review ${needsReview}.`);
+    if (synced) {
+      alert(`Import complete. Imported ${imported}. Skipped duplicates ${skipped}. Hidden transfers ${ignored}. Needs review ${needsReview}.`);
+    }
+    // A failed save already displays a warning and keeps the local copy.
+
   };
 
   reader.readAsText(file);
@@ -4001,6 +4124,11 @@ function renderSettings() {
     </div>
     <section class="panel">
       <p class="muted">Parent categories remain controlled by the app. Custom subcategories are shared through Supabase and appear in dropdowns.</p>
+      <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:14px">
+        <strong>Transaction backup</strong>
+        <p class="muted">Download a dated JSON copy of all loaded transactions, including your categorisations. Keep it somewhere private.</p>
+        <button class="primary" onclick="downloadTransactionBackup()">Download transaction backup</button>
+      </div>
     </section>
 
     ${renderCashflowModal()}
@@ -4098,7 +4226,7 @@ function render() {
     <main>
       <div class="app-header">
         <h1 class="app-title">Goodman Finances Inc.</h1>
-        <div class="app-subtitle">Household financial control system · v22.3.1</div>
+        <div class="app-subtitle">Household financial control system · v22.3.2</div>
       </div>
 
       ${renderPageTabs()}
