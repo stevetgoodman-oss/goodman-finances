@@ -892,18 +892,6 @@ button.secondary {
   margin: 0;
 }
 
-.window-toggle {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin: 10px 0 12px;
-}
-
-.window-toggle button.active {
-  background: var(--navy);
-  color: white;
-}
-
 .badge {
   display: inline-flex;
   align-items: center;
@@ -1002,7 +990,6 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 let activeTab = "wealth";
 let viewMode = "monthly";
-let cashflowWindowDays = 14;
 let editingId = null;
 let wealthEditOpen = false;
 let editingCashflowId = null;
@@ -2342,7 +2329,7 @@ function downloadTransactionBackup() {
   const exportDate = new Date().toISOString().slice(0, 10);
   const backup = {
     format: "goodman-finances-transactions-v1",
-    appVersion: "22.4",
+    appVersion: "22.5",
     exportedAt: new Date().toISOString(),
     transactionCount: transactions.length,
     transactions
@@ -2396,15 +2383,24 @@ function isOnOrAfterBudgetStart(dateString) {
   return new Date(dateString) >= new Date(budgetStartDate);
 }
 
-function isThisMonth(dateString) {
-  const d = new Date(dateString);
-  const now = new Date();
+const PAYDAY_DAY = 14;
 
-  return (
-    d.getMonth() === now.getMonth() &&
-    d.getFullYear() === now.getFullYear() &&
-    isOnOrAfterBudgetStart(dateString)
-  );
+// One household income period: 14th of this (or previous) month through
+// the 13th of the following month. Use local calendar dates throughout.
+function getPayPeriod(today = new Date()) {
+  const cycleMonth = today.getDate() >= PAYDAY_DAY
+    ? today.getMonth()
+    : today.getMonth() - 1;
+  const start = new Date(today.getFullYear(), cycleMonth, PAYDAY_DAY);
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, PAYDAY_DAY - 1);
+  return { start, end };
+}
+
+function isInCurrentPayPeriod(dateString, today = new Date()) {
+  if (!dateString || !isOnOrAfterBudgetStart(dateString)) return false;
+  const date = parseLocalISODate(dateString);
+  const { start, end } = getPayPeriod(today);
+  return date >= start && date <= end;
 }
 
 function monthsElapsedSinceBudgetStart() {
@@ -2508,11 +2504,6 @@ function renderPageTabs() {
   `;
 }
 
-function setCashflowWindow(days) {
-  cashflowWindowDays = days;
-  render();
-}
-
 function setTab(tab) {
   activeTab = tab;
   render();
@@ -2550,8 +2541,8 @@ function getVisibleTransactions() {
   return transactions.filter(t => !t.hidden);
 }
 
-function getThisMonthTransactions() {
-  return getVisibleTransactions().filter(t => isThisMonth(t.date));
+function getPayPeriodTransactions(today = new Date()) {
+  return getVisibleTransactions().filter(t => isInCurrentPayPeriod(t.date, today));
 }
 
 function getTransactionsSinceBudgetStart() {
@@ -2571,11 +2562,11 @@ function getNeedsReviewTransactions() {
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
-function getThisMonthParentTotals() {
+function getPayPeriodParentTotals(today = new Date()) {
   const totals = {};
   Object.keys(budgets).forEach(cat => totals[cat] = 0);
 
-  getThisMonthTransactions().forEach(t => {
+  getPayPeriodTransactions(today).forEach(t => {
     if (transactionCountsForBudget(t) && totals[t.parent] !== undefined) {
       totals[t.parent] += expenseValue(t);
     }
@@ -2597,12 +2588,12 @@ function getAccrualParentTotals() {
   return totals;
 }
 
-function getSubTotals(parent, mode = "month") {
+function getSubTotals(parent, mode = "pay-period", today = new Date()) {
   const totals = {};
   const txSource =
     mode === "accrual"
       ? getTransactionsSinceBudgetStart()
-      : getThisMonthTransactions();
+      : getPayPeriodTransactions(today);
 
   txSource
     .filter(t => t.parent === parent && transactionCountsForBudget(t))
@@ -2613,14 +2604,14 @@ function getSubTotals(parent, mode = "month") {
   return totals;
 }
 
-function getMonthlySummary() {
-  const monthTx = getThisMonthTransactions();
+function getPayPeriodSummary(today = new Date()) {
+  const periodTx = getPayPeriodTransactions(today);
 
-  const income = monthTx
+  const income = periodTx
     .filter(transactionCountsForIncome)
     .reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
-  const expenses = monthTx
+  const expenses = periodTx
     .filter(transactionCountsForBudget)
     .reduce((sum, t) => sum + expenseValue(t), 0);
 
@@ -3712,20 +3703,23 @@ function expandCashflowOccurrences(startDate, endDate, type = null) {
   return occurrences.sort((a, b) => a.occurrenceDate - b.occurrenceDate);
 }
 
-function getCashflowsDueToDateThisMonth(type = null, today = new Date()) {
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  return expandCashflowOccurrences(monthStart, today, type);
+function getCashflowsDueToDateThisPayPeriod(type = null, today = new Date()) {
+  const { start } = getPayPeriod(today);
+  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return expandCashflowOccurrences(start, todayDate, type);
 }
 
-function getCashflowsScheduledThisMonth(type = null, today = new Date()) {
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-  return expandCashflowOccurrences(monthStart, monthEnd, type);
+function getCashflowsScheduledThisPayPeriod(type = null, today = new Date()) {
+  const { start, end } = getPayPeriod(today);
+  return expandCashflowOccurrences(start, end, type);
 }
 
-function getUpcomingCashflows(days = 14, type = null, today = new Date()) {
-  const endDate = addDays(today, days);
-  return expandCashflowOccurrences(today, endDate, type);
+// Remaining commitments, inclusive of today and the 13th. Normalising today
+// to midnight also includes obligations scheduled earlier on the current day.
+function getUpcomingCashflowsThisPayPeriod(type = null, today = new Date()) {
+  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const { end } = getPayPeriod(today);
+  return expandCashflowOccurrences(todayDate, end, type);
 }
 
 function formatShortDate(dateString) {
@@ -3780,7 +3774,7 @@ function groupCashflowsByDate(items) {
   }, {});
 }
 
-function renderAllCashflowsSheet(items, days) {
+function renderAllCashflowsSheet(items, dateRangeLabel) {
   if (!cashflowModalOpen) return "";
 
   const grouped = groupCashflowsByDate(items);
@@ -3792,7 +3786,7 @@ function renderAllCashflowsSheet(items, days) {
         <div class="sheet-header">
           <div>
             <h2>Scheduled cashflows</h2>
-            <p class="muted">Next ${days} days · ${items.length} transactions</p>
+            <p class="muted">${dateRangeLabel} · ${items.length} scheduled cashflows</p>
           </div>
           <button class="sheet-close" onclick="setCashflowModal(false)">Close</button>
         </div>
@@ -3826,24 +3820,25 @@ function aggregateScheduledBySubcategory(items) {
 
 
 function renderDashboard() {
-  const monthlySummary = getMonthlySummary();
-  const monthlyParentTotals = getThisMonthParentTotals();
+  const today = new Date();
+  const { start: payPeriodStart, end: payPeriodEnd } = getPayPeriod(today);
+  const payPeriodLabel = `${formatShortDate(toISODateLocal(payPeriodStart))} – ${formatShortDate(toISODateLocal(payPeriodEnd))}`;
+  const remainingPeriodLabel = `${formatShortDate(toISODateLocal(today))} – ${formatShortDate(toISODateLocal(payPeriodEnd))}`;
+  const periodSummary = getPayPeriodSummary(today);
+  const periodParentTotals = getPayPeriodParentTotals(today);
   const needsReview = getNeedsReviewTransactions();
   const needsReviewCount = needsReview.length;
   const needsReviewTotal = needsReview.reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
-  const today = new Date();
-  const expensesDueThisMonth = getCashflowsDueToDateThisMonth("obligation", today);
-  const expensesScheduledThisMonth = getCashflowsScheduledThisMonth("obligation", today);
-  const incomeScheduledThisMonth = getCashflowsScheduledThisMonth("income", today);
+  const expensesDueThisPeriod = getCashflowsDueToDateThisPayPeriod("obligation", today);
+  const expensesScheduledThisPeriod = getCashflowsScheduledThisPayPeriod("obligation", today);
 
-  const plannedSpendSoFar = cashflowTotal(expensesDueThisMonth);
-  const plannedSpendThisMonth = cashflowTotal(expensesScheduledThisMonth);
-  const expectedMonthlyIncome = cashflowTotal(incomeScheduledThisMonth);
-  const spendVsPlanBalance = plannedSpendSoFar - monthlySummary.expenses;
+  const plannedSpendSoFar = cashflowTotal(expensesDueThisPeriod);
+  const plannedSpendThisPeriod = cashflowTotal(expensesScheduledThisPeriod);
+  const spendVsPlanBalance = plannedSpendSoFar - periodSummary.expenses;
 
-  const upcomingExpenses = getUpcomingCashflows(cashflowWindowDays, "obligation", today);
-  const upcomingIncome = getUpcomingCashflows(cashflowWindowDays, "income", today);
+  const upcomingExpenses = getUpcomingCashflowsThisPayPeriod("obligation", today);
+  const upcomingIncome = getUpcomingCashflowsThisPayPeriod("income", today);
   const upcomingExpensesTotal = cashflowTotal(upcomingExpenses);
   const upcomingIncomeTotal = cashflowTotal(upcomingIncome);
   const currentAvailableCash = toNumber(wealth.current.householdCash);
@@ -3852,18 +3847,18 @@ function renderDashboard() {
     .sort((a, b) => a.occurrenceDate - b.occurrenceDate);
 
   const parentPlanTotals = {};
-  expensesScheduledThisMonth.forEach(item => {
+  expensesScheduledThisPeriod.forEach(item => {
     parentPlanTotals[item.parent_category] = (parentPlanTotals[item.parent_category] || 0) + Number(item.amount || 0);
   });
 
   const parentPlanDueTotals = {};
-  expensesDueThisMonth.forEach(item => {
+  expensesDueThisPeriod.forEach(item => {
     parentPlanDueTotals[item.parent_category] = (parentPlanDueTotals[item.parent_category] || 0) + Number(item.amount || 0);
   });
 
   let biggestDriver = "No spending yet";
   let biggestDriverAmount = 0;
-  const driverEntries = Object.entries(monthlyParentTotals)
+  const driverEntries = Object.entries(periodParentTotals)
     .filter(([parent, amount]) => amount > 0)
     .sort((a, b) => b[1] - a[1]);
 
@@ -3875,33 +3870,33 @@ function renderDashboard() {
   const healthCards = `
     <div class="health-grid" id="budget-review">
       <div class="health-card">
-        <span class="label">Planned this month</span>
-        <strong class="value">${dollars(plannedSpendThisMonth)}</strong>
+        <span class="label">Planned this pay period</span>
+        <strong class="value">${dollars(plannedSpendThisPeriod)}</strong>
         <div class="note">Scheduled expenses</div>
       </div>
       <div class="health-card">
         <span class="label">Actual spend</span>
-        <strong class="value">${dollars(monthlySummary.expenses)}</strong>
+        <strong class="value">${dollars(periodSummary.expenses)}</strong>
         <div class="note">Matched transactions</div>
       </div>
       <div class="health-card">
         <span class="label">Needs review</span>
         <strong class="value">${needsReviewCount}</strong>
-        <div class="note">${needsReviewCount ? dollars(needsReviewTotal) + " requires classification" : "All clear"}</div>
+        <div class="note">${needsReviewCount ? dollars(needsReviewTotal) + " requires classification · all periods" : "All clear"}</div>
       </div>
     </div>
   `;
 
   const plannedParents = [...new Set([
     ...Object.keys(parentPlanTotals),
-    ...Object.keys(monthlyParentTotals)
+    ...Object.keys(periodParentTotals)
   ])].filter(parent => parent !== "Income" && parent !== "Needs Review" && parent !== "Exclude");
 
   const categoryRows = plannedParents.length
     ? plannedParents.map(parent => {
         const plannedMonth = parentPlanTotals[parent] || 0;
         const plannedDue = parentPlanDueTotals[parent] || 0;
-        const actual = monthlyParentTotals[parent] || 0;
+        const actual = periodParentTotals[parent] || 0;
         const difference = plannedDue - actual;
         const pct = plannedDue ? Math.min((actual / plannedDue) * 100, 100) : actual > 0 ? 100 : 0;
 
@@ -3923,8 +3918,8 @@ function renderDashboard() {
           ? { label: "On plan", cls: "status-good", fill: "progress-fill", pct }
           : { label: "Over", cls: "status-bad", fill: "progress-fill bad", pct };
 
-        const subTotals = getSubTotals(parent, "month");
-        const scheduledItems = expensesScheduledThisMonth.filter(item => item.parent_category === parent);
+        const subTotals = getSubTotals(parent, "pay-period", today);
+        const scheduledItems = expensesScheduledThisPeriod.filter(item => item.parent_category === parent);
 
         return `
           <details class="category-card plan-card">
@@ -3937,16 +3932,16 @@ function renderDashboard() {
               <div class="plan-card-result ${resultClass}">${resultText}</div>
               <div class="progress"><div class="${status.fill}" style="width:${status.pct}%"></div></div>
             </summary>
-            <div class="metric-row"><span>Scheduled this month</span><strong>${dollars(plannedMonth)}</strong></div>
+            <div class="metric-row"><span>Scheduled this pay period</span><strong>${dollars(plannedMonth)}</strong></div>
             <div class="metric-row"><span>Due so far</span><strong>${dollars(plannedDue)}</strong></div>
             <div class="metric-row"><span>Actual spend</span><strong>${dollars(actual)}</strong></div>
             ${
               scheduledItems.length
                 ? `<div class="sub-breakdown">
-                    <div class="budget-section-heading">Scheduled this month</div>
+                    <div class="budget-section-heading">Scheduled this pay period</div>
                     ${Object.entries(aggregateScheduledBySubcategory(scheduledItems)).sort((a,b) => b[1]-a[1]).map(([sub, amount]) => `<div class="sub-row"><span>${sub}</span><strong>${dollars(amount)}</strong></div>`).join("")}
                   </div>`
-                : `<div class="empty">No scheduled expenses for this category this month.</div>`
+                : `<div class="empty">No scheduled expenses for this category this pay period.</div>`
             }
             ${
               Object.keys(subTotals).length
@@ -3965,9 +3960,9 @@ function renderDashboard() {
 
   return `
     <section class="hero-card" id="budget-overview">
-      <div class="hero-label">Tracking this month</div>
+      <div class="hero-label">Tracking this pay period</div>
       <div class="hero-value">${dollars(Math.abs(spendVsPlanBalance))} ${spendVsPlanBalance >= 0 ? "under plan" : "over plan"}</div>
-      <div class="hero-context">Based on actual spend vs scheduled expenses due so far</div>
+      <div class="hero-context">${payPeriodLabel} · Based on actual spend vs scheduled expenses due so far</div>
       <div class="hero-metrics">
         <div>
           <span>Plan so far</span>
@@ -3975,7 +3970,7 @@ function renderDashboard() {
         </div>
         <div>
           <span>Spent so far</span>
-          <strong>${dollars(monthlySummary.expenses)}</strong>
+          <strong>${dollars(periodSummary.expenses)}</strong>
         </div>
       </div>
       <div class="hero-context">Biggest spend: <strong>${biggestDriver}${biggestDriverAmount ? " · " + dollars(biggestDriverAmount) : ""}</strong></div>
@@ -3983,13 +3978,10 @@ function renderDashboard() {
 
     <div class="section-title" id="budget-upcoming">
       <h2>Upcoming Cashflow</h2>
-      <span>Known commitments only</span>
+      <span>${remainingPeriodLabel}</span>
     </div>
     <section class="summary">
-      <div class="window-toggle">
-        <button class="${cashflowWindowDays === 14 ? "active" : ""}" onclick="setCashflowWindow(14)">Next 14 days</button>
-        <button class="${cashflowWindowDays === 30 ? "active" : ""}" onclick="setCashflowWindow(30)">Next 30 days</button>
-      </div>
+      <p class="muted">Known commitments remaining in this pay period.</p>
       <div class="metric-row"><span>Household cash</span><strong>${dollars(currentAvailableCash)}</strong></div>
       <div class="metric-row"><span>Expected income</span><strong class="good">+${dollars(upcomingIncomeTotal)}</strong></div>
       <div class="metric-row"><span>Scheduled expenses</span><strong class="bad">-${dollars(upcomingExpensesTotal)}</strong></div>
@@ -4010,13 +4002,13 @@ function renderDashboard() {
         }
       </details>
     </section>
-    ${renderAllCashflowsSheet(allUpcomingCashflows, cashflowWindowDays)}
+    ${renderAllCashflowsSheet(allUpcomingCashflows, remainingPeriodLabel)}
 
     ${healthCards}
 
     <div class="section-title" id="budget-categories">
-      <h2>This Month vs Plan</h2>
-      <span>Tap to drill down</span>
+      <h2>This Pay Period vs Plan</h2>
+      <span>${payPeriodLabel}</span>
     </div>
     ${categoryRows}
   `;
@@ -4471,7 +4463,7 @@ function render() {
     <main>
       <div class="app-header">
         <h1 class="app-title">Goodman Finances Inc.</h1>
-        <div class="app-subtitle">Household financial control system · v22.4</div>
+        <div class="app-subtitle">Household financial control system · v22.5</div>
       </div>
 
       ${renderPageTabs()}
