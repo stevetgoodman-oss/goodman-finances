@@ -940,6 +940,19 @@ button.secondary {
   .hero-value { font-size: 30px; }
   .health-grid { grid-template-columns: 1fr; }
 }
+
+/* v22.4 transaction review tools */
+.edit-sheet { max-height: 88vh; overflow-y: auto; overscroll-behavior: contain; }
+.mapping-review-panel { border: 1px solid var(--border); border-radius: 16px; padding: 12px; margin-top: 12px; background: #F8FAFC; }
+.mapping-review-heading { color: var(--navy); font-weight: 850; font-size: 16px; }
+.mapping-review-panel .inline-toggle { align-items: flex-start; margin: 13px 0; }
+.mapping-review-panel .inline-toggle span { display: grid; gap: 3px; }
+.mapping-review-panel .inline-toggle small { color: var(--muted); font-size: 12px; font-weight: 400; line-height: 1.35; }
+.retroactive-preview { margin: 8px 0; border-top: 1px solid var(--border); padding-top: 10px; line-height: 1.4; font-size: 13px; }
+.review-sample { margin: 6px 0; padding-left: 18px; overflow-wrap: anywhere; }
+.review-sample li { margin: 4px 0; }
+.review-helper .primary:disabled { opacity: .5; cursor: not-allowed; }
+
 </style>
 </head>
 
@@ -2104,18 +2117,23 @@ async function deleteScheduledCashflow(id) {
   }
 }
 
-async function saveMapping(item) {
-  item.pattern = normaliseText(item.pattern);
-
-  const existingIndex = mappings.findIndex(m => String(m.id) === String(item.id));
-  if (existingIndex >= 0) {
-    mappings[existingIndex] = item;
-  } else {
-    mappings.push(item);
+// Persist a single rule, not the entire rules table. Only update the local
+// list after Supabase confirms the write (important when using two phones).
+async function saveMapping(item, shouldRender = true) {
+  const rule = { ...item, pattern: normaliseText(item.pattern) };
+  if (!rule.pattern || !isUuid(rule.id)) throw new Error("Invalid mapping rule.");
+  if (isSupabaseConfigured()) {
+    await supabaseFetch("transaction_mappings?on_conflict=id", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify([mappingDbRow(rule)])
+    });
   }
-
-  await syncMappingsToSupabase();
-  render();
+  const existingIndex = mappings.findIndex(m => String(m.id) === String(rule.id));
+  if (existingIndex >= 0) mappings[existingIndex] = rule;
+  else mappings.push(rule);
+  localStorage.setItem("transaction_mappings", JSON.stringify(mappings));
+  if (shouldRender) render();
 }
 
 async function deleteMapping(id) {
@@ -2324,7 +2342,7 @@ function downloadTransactionBackup() {
   const exportDate = new Date().toISOString().slice(0, 10);
   const backup = {
     format: "goodman-finances-transactions-v1",
-    appVersion: "22.3.2",
+    appVersion: "22.4",
     exportedAt: new Date().toISOString(),
     transactionCount: transactions.length,
     transactions
@@ -2756,106 +2774,323 @@ function updateEditSubCategories(parentValue) {
     .join("");
 }
 
+// v22.4: Explicit, review-only retroactive categorisation. A completed batch
+// never rewrites already classified records or hidden/internal transfers.
+const BULK_REVIEW_BATCH_SIZE = 40;
+let bulkReviewBusy = false;
+const GENERIC_MAPPING_PATTERNS = new Set([
+  "VISA", "EFTPOS", "PURCHASE", "CARD", "DEBIT", "CREDIT", "PAYMENT",
+  "TRANSFER", "ONLINE", "DIRECT DEBIT", "TRANSACTION", "REF", "POS",
+  "BANK", "MERCHANT", "AUTH", "PENDING", "CONTACTLESS"
+]);
+
+function escapeReviewHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[c]);
+}
+
+function suggestMerchantPattern(description) {
+  return normaliseText(description)
+    .replace(/^(?:VISA PURCHASE|VISA DEBIT|DEBIT CARD PURCHASE|CARD PURCHASE|EFTPOS PURCHASE|EFTPOS|DIRECT DEBIT|POS PURCHASE|PURCHASE)\s+/, "")
+    .replace(/\s+(?:REF\s*)?\d{4,}.*$/, "")
+    .slice(0, 40).trim();
+}
+
+function safeReviewPattern(pattern) {
+  const clean = normaliseText(pattern);
+  return clean.length >= 4 && !GENERIC_MAPPING_PATTERNS.has(clean);
+}
+
+function isEligibleForRetroactiveReview(t, parent) {
+  if (!t || t.type !== "needs_review" || t.hidden || t.is_reimbursement || !isUuid(t.id)) return false;
+  const value = Number(t.amount);
+  // Do not mix refunds/income with expenses based solely on merchant wording.
+  return parent === "Income" ? value > 0 : value < 0;
+}
+
+function findPreviousReviewMatches(pattern, sourceId, parent) {
+  const clean = normaliseText(pattern);
+  if (!safeReviewPattern(clean) || !parent || parent === "Needs Review" || parent === "Exclude") return [];
+  return transactions.filter(t =>
+    String(t.id) !== String(sourceId) &&
+    isEligibleForRetroactiveReview(t, parent) &&
+    normaliseText(t.note).includes(clean)
+  );
+}
+
+function updateRetroactivePreview() {
+  const form = document.getElementById("editTransactionForm");
+  const preview = document.getElementById("retroactivePreview");
+  if (!form || !preview) return;
+  const remember = !!form.rememberMapping.checked;
+  const previous = !!form.applyPrevious.checked;
+  const pattern = normaliseText(form.mappingPattern.value);
+  if (!remember && !previous) {
+    preview.innerHTML = '<span class="muted">Edit this transaction only. Both options are off by default.</span>';
+    return;
+  }
+  if (!safeReviewPattern(pattern)) {
+    preview.innerHTML = '<span class="bad">Use a distinctive merchant pattern of at least 4 characters (not generic banking terms).</span>';
+    return;
+  }
+  if (form.isReimbursement?.checked || form.parent.value === "Needs Review") {
+    preview.innerHTML = '<span class="watch">Bulk categorisation is unavailable for reimbursements or Needs Review as a destination.</span>';
+    return;
+  }
+  if (form.parent.value === "Income" ? Number(form.amount.value) <= 0 : Number(form.amount.value) >= 0) {
+    preview.innerHTML = '<span class="watch">Merchant matching is only available for positive income or negative spending.</span>';
+    return;
+  }
+  const matches = findPreviousReviewMatches(pattern, editingId, form.parent.value);
+  const sample = matches.slice(0, 4).map(t =>
+    `<li>${escapeReviewHtml(t.date)} · ${escapeReviewHtml(t.note)} · ${dollarsExact(Math.abs(t.amount))}</li>`
+  ).join("");
+  preview.innerHTML = `
+    <strong>${matches.length} additional transaction${matches.length === 1 ? "" : "s"} match "${escapeReviewHtml(pattern)}"</strong>
+    <div class="muted">${previous ? "These Needs Review transactions will be updated after confirmation." : "Tick ‘Apply to previous transactions’ to categorise these existing exceptions."}</div>
+    ${previous && matches.length ? `<ul class="review-sample">${sample}</ul>${matches.length > 4 ? `<div class="muted">…and ${matches.length - 4} more.</div>` : ""}` : ""}
+  `;
+}
+
+function setLocalTransactionClassification(rows, parent, sub, type) {
+  const ids = new Set(rows.map(row => String(row.id)));
+  transactions.forEach(t => {
+    if (!ids.has(String(t.id))) return;
+    t.parent = parent;
+    t.sub = sub;
+    t.type = type;
+    t.hidden = false;
+    t.is_reimbursement = false;
+  });
+  localStorage.setItem("transactions", JSON.stringify(transactions));
+}
+
+// PATCH, rather than upsert: a matching record must still be Needs Review on
+// Supabase. This avoids recreating deleted rows or clobbering a classification
+// made on Lou's phone since this device loaded its snapshot.
+async function applyReviewBatch(rows, parent, sub) {
+  if (!rows.length) return 0;
+  if (!transactionHistoryReady || appError || appLoading) throw new Error("Incomplete transaction history.");
+  const type = parent === "Income" ? "income" : "expense";
+  const ids = rows.map(row => String(row.id));
+  if (!ids.every(isUuid)) throw new Error("Invalid transaction IDs in batch.");
+  if (!isSupabaseConfigured()) {
+    setLocalTransactionClassification(rows, parent, sub, type);
+    return rows.length;
+  }
+  const query = `transactions?id=in.(${ids.join(",")})&type=eq.needs_review&hidden=not.is.true&is_reimbursement=not.is.true`;
+  const updated = await supabaseFetch(query, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({ parent, sub, type })
+  });
+  if (!Array.isArray(updated)) throw new Error("Supabase did not confirm batch updates.");
+  const confirmedIds = new Set(updated.map(r => String(r.id)));
+  if (updated.some(r => !ids.includes(String(r.id)))) throw new Error("Unexpected transaction response.");
+  const confirmed = rows.filter(row => confirmedIds.has(String(row.id)));
+  if (confirmed.length) setLocalTransactionClassification(confirmed, parent, sub, type);
+  if (confirmed.length !== rows.length) {
+    throw new Error("Some transactions were changed on another device. Refresh to review the latest data.");
+  }
+  return confirmed.length;
+}
+
+async function applyReviewGroups(groups) {
+  let updatedCount = 0;
+  for (const group of groups) {
+    for (let i = 0; i < group.rows.length; i += BULK_REVIEW_BATCH_SIZE) {
+      updatedCount += await applyReviewBatch(group.rows.slice(i, i + BULK_REVIEW_BATCH_SIZE), group.parent, group.sub);
+    }
+  }
+  return updatedCount;
+}
+
+function getExistingRuleReviewSuggestions() {
+  const results = [];
+  let ambiguous = 0;
+  for (const t of transactions) {
+    if (!t || t.type !== "needs_review" || t.hidden || t.is_reimbursement || !isUuid(t.id)) continue;
+    const note = normaliseText(t.note);
+    const candidates = mappings.filter(rule =>
+      rule.active !== false &&
+      safeReviewPattern(rule.pattern) &&
+      note.includes(normaliseText(rule.pattern)) &&
+      isEligibleForRetroactiveReview(t, rule.parent_category) &&
+      rule.parent_category !== "Needs Review" && rule.parent_category !== "Exclude" &&
+      Object.prototype.hasOwnProperty.call(categoryModel, rule.parent_category)
+    );
+    if (!candidates.length) continue;
+    const targets = new Set(candidates.map(rule => `${rule.parent_category}\u0000${rule.sub_category}`));
+    if (targets.size !== 1) { ambiguous++; continue; }
+    results.push({ tx: t, parent: candidates[0].parent_category, sub: candidates[0].sub_category });
+  }
+  return { results, ambiguous };
+}
+
+async function reprocessExistingMappings() {
+  if (bulkReviewBusy || !transactionHistoryReady || appError || appLoading) return;
+  const suggestions = getExistingRuleReviewSuggestions();
+  if (!suggestions.results.length) {
+    alert("No unambiguous matching exceptions found. Continue reviewing transactions individually.");
+    return;
+  }
+  const countByCategory = new Map();
+  for (const item of suggestions.results) {
+    const key = `${item.parent} → ${item.sub}`;
+    countByCategory.set(key, (countByCategory.get(key) || 0) + 1);
+  }
+  const summary = [...countByCategory].sort((a,b) => b[1] - a[1]).slice(0, 7)
+    .map(([category, count]) => `• ${category}: ${count}`).join("\n");
+  const message = `Apply existing mapping rules to ${suggestions.results.length} Needs Review transactions?\n\n${summary}${countByCategory.size > 7 ? "\n• ...and more categories" : ""}\n\n${suggestions.ambiguous} ambiguous matches will be skipped. Existing categorised transactions will not change.\n\nContinue?`;
+  if (!confirm(message)) return;
+  bulkReviewBusy = true;
+  const button = document.getElementById("reprocessReviewButton");
+  if (button) { button.disabled = true; button.textContent = "Applying rules…"; }
+  let saved = 0;
+  try {
+    const grouped = new Map();
+    for (const item of suggestions.results) {
+      const key = `${item.parent}\u0000${item.sub}`;
+      if (!grouped.has(key)) grouped.set(key, { parent: item.parent, sub: item.sub, rows: [] });
+      grouped.get(key).rows.push(item.tx);
+    }
+    saved = await applyReviewGroups([...grouped.values()]);
+    render();
+    alert(`Categorised ${saved} transactions using existing rules. ${suggestions.ambiguous} ambiguous matches were skipped.`);
+  } catch (error) {
+    console.error(error);
+    alert("The batch did not complete. Some updates may have been saved. Refresh to reconcile with Supabase before continuing.");
+    await loadSharedData();
+  } finally {
+    bulkReviewBusy = false;
+    if (button) button.disabled = false;
+  }
+}
+
 async function saveEditedTransaction(e) {
   e.preventDefault();
-
+  if (bulkReviewBusy || !transactionHistoryReady || appError || appLoading) return;
   const t = transactions.find(tx => String(tx.id) === String(editingId));
   if (!t) return;
-
+  const wasReview = t.type === "needs_review";
   const form = e.target;
   const parent = form.parent.value;
   const amount = parseFloat(form.amount.value);
-  const customSubcategoryInput = form.customSubcategory ? form.customSubcategory.value.trim() : "";
+  const customSubcategoryInput = form.customSubcategory?.value.trim() || "";
   const finalSub = customSubcategoryInput || form.sub.value;
-  const isReimbursement = amount > 0 && form.isReimbursement && form.isReimbursement.checked;
-
-  if (customSubcategoryInput) {
-    await ensureCustomSubcategory(parent, finalSub);
+  const isReimbursement = amount > 0 && !!form.isReimbursement?.checked;
+  const rememberMapping = !!form.rememberMapping?.checked;
+  const applyPrevious = !!form.applyPrevious?.checked;
+  const pattern = normaliseText(form.mappingPattern?.value);
+  if (!Number.isFinite(amount) || !finalSub) { alert("Enter a valid amount and category."); return; }
+  if ((rememberMapping || applyPrevious) && (!safeReviewPattern(pattern) || isReimbursement || parent === "Needs Review" || parent === "Exclude")) {
+    alert("To remember or reuse a mapping, select a valid destination and a distinctive merchant pattern of at least 4 characters. Reimbursements must be reviewed individually.");
+    return;
   }
-
-  t.amount = amount;
-  t.date = form.date.value;
-  t.parent = parent;
-  t.sub = finalSub;
-  t.note = form.note.value;
-  t.hidden = false;
-  t.is_reimbursement = isReimbursement;
-
-  if (isReimbursement) {
-    t.type = "obligation";
-  } else if (parent === "Income") {
-    t.type = "income";
-  } else if (parent === "Needs Review") {
-    t.type = "needs_review";
-  } else if (parent === "Exclude") {
-    t.type = "ignored";
-    t.hidden = true;
-  } else {
-    t.type = "expense";
+  if ((rememberMapping || applyPrevious) && (parent === "Income" ? amount <= 0 : amount >= 0)) {
+    alert("Merchant matching requires a positive income or a negative expense. Review refunds and unusual amounts individually.");
+    return;
   }
-
-  if (!isReimbursement && form.rememberMapping && form.rememberMapping.checked && form.mappingPattern.value.trim()) {
-    await saveMapping({
-      id: uuid(),
-      pattern: form.mappingPattern.value.trim(),
-      parent_category: parent,
-      sub_category: finalSub,
-      active: true
-    });
+  const matches = applyPrevious ? findPreviousReviewMatches(pattern, t.id, parent) : [];
+  if (applyPrevious && matches.length) {
+    const sample = matches.slice(0, 5).map(x => `• ${x.date}: ${x.note}`).join("\n");
+    if (!confirm(`Categorise ${matches.length} additional Needs Review transactions as ${parent} → ${finalSub}?\n\nMatching pattern: ${pattern}\n\n${sample}${matches.length > 5 ? "\n…and more" : ""}\n\nThis does not change transactions already categorised.`)) return;
   }
-
-  editingId = null;
-  await save([t]);
+  let existingRule = null;
+  if (rememberMapping) {
+    existingRule = mappings.find(rule => rule.active !== false && normaliseText(rule.pattern) === pattern);
+    if (existingRule && (existingRule.parent_category !== parent || existingRule.sub_category !== finalSub)) {
+      alert(`The pattern "${pattern}" already maps to ${existingRule.parent_category} → ${existingRule.sub_category}. Edit that mapping in Settings rather than creating a conflicting rule.`);
+      return;
+    }
+  }
+  const updated = {
+    ...t,
+    amount,
+    date: form.date.value,
+    parent,
+    sub: finalSub,
+    note: form.note.value,
+    hidden: parent === "Exclude",
+    is_reimbursement: isReimbursement,
+    type: isReimbursement ? "obligation" : parent === "Income" ? "income" : parent === "Needs Review" ? "needs_review" : parent === "Exclude" ? "ignored" : "expense"
+  };
+  bulkReviewBusy = true;
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) { submitButton.disabled = true; submitButton.textContent = "Saving…"; }
+  let sourceSaved = false;
+  try {
+    if (customSubcategoryInput) await ensureCustomSubcategory(parent, finalSub);
+    // Save the edited record before changing local state. This keeps failures
+    // from producing an inaccurate screen or a local-only classification.
+    await syncTransactionsToSupabase([updated]);
+    Object.assign(t, updated);
+    sourceSaved = true;
+    localStorage.setItem("transactions", JSON.stringify(transactions));
+    if (rememberMapping && !existingRule) {
+      await saveMapping({ id: uuid(), pattern, parent_category: parent, sub_category: finalSub, active: true }, false);
+    }
+    const changed = applyPrevious && matches.length
+      ? await applyReviewGroups([{ parent, sub: finalSub, rows: matches }]) : 0;
+    editingId = null;
+    render();
+    if (wasReview) scrollToSection("tx-review");
+    if (changed) alert(`Saved. Categorised ${changed} additional matching Needs Review transactions${rememberMapping ? " and remembered the rule for future imports" : ""}.`);
+  } catch (error) {
+    console.error(error);
+    if (sourceSaved) {
+      editingId = null;
+      alert("Your edited transaction was saved, but the mapping or bulk update did not finish. Some changes may have succeeded. The app will reload shared data so you can review what remains.");
+      await loadSharedData();
+    } else {
+      alert("Could not save this transaction to Supabase. No batch updates were attempted. Please try again.");
+      if (submitButton) { submitButton.disabled = false; submitButton.textContent = "Save"; }
+    }
+  } finally {
+    bulkReviewBusy = false;
+  }
 }
 
 function renderEditModal() {
   if (editingId === null) return "";
-
   const t = transactions.find(tx => String(tx.id) === String(editingId));
   if (!t) return "";
-
   const parentOptions = Object.keys(categoryModel)
-    .map(parent => `<option value="${parent}" ${parent === t.parent ? "selected" : ""}>${parent}</option>`)
-    .join("");
-
+    .map(parent => `<option value="${escapeReviewHtml(parent)}" ${parent === t.parent ? "selected" : ""}>${escapeReviewHtml(parent)}</option>`).join("");
   const subOptions = getAllSubcategories(t.parent || "Needs Review")
-    .map(sub => `<option value="${sub}" ${sub === t.sub ? "selected" : ""}>${sub}</option>`)
-    .join("");
-
+    .map(sub => `<option value="${escapeReviewHtml(sub)}" ${sub === t.sub ? "selected" : ""}>${escapeReviewHtml(sub)}</option>`).join("");
   return `
     <div class="edit-overlay">
       <div class="edit-sheet">
         <h2>Edit Transaction</h2>
-        <p class="muted">${t.note || "No merchant / note"}</p>
-
-        <form onsubmit="saveEditedTransaction(event)">
-          <input type="date" name="date" value="${t.date}" required />
-          <input type="number" step="0.01" name="amount" value="${t.amount}" required />
-
-          <select name="parent" id="editParent" onchange="updateEditSubCategories(this.value)" required>
-            ${parentOptions}
-          </select>
-
-          <select name="sub" id="editSub" required>
-            ${subOptions}
-          </select>
-
-          <input type="text" name="note" value="${String(t.note || "").replace(/"/g, "&quot;")}" placeholder="Note / merchant" />
-
+        <p class="muted">${escapeReviewHtml(t.note || "No merchant / note")}</p>
+        <form id="editTransactionForm" onsubmit="saveEditedTransaction(event)">
+          <input type="date" name="date" value="${escapeReviewHtml(t.date)}" required />
+          <input type="number" step="0.01" name="amount" value="${Number(t.amount)}" oninput="updateRetroactivePreview()" required />
+          <select name="parent" id="editParent" onchange="updateEditSubCategories(this.value);updateRetroactivePreview()" required>${parentOptions}</select>
+          <select name="sub" id="editSub" required>${subOptions}</select>
+          <input type="text" name="note" value="${escapeReviewHtml(t.note || "")}" placeholder="Note / merchant" />
           <input type="text" name="customSubcategory" placeholder="Or add new subcategory" />
-
           <label class="inline-toggle">
-            <input type="checkbox" name="isReimbursement" ${t.is_reimbursement ? "checked" : ""} ${Number(t.amount) <= 0 ? "disabled" : ""} />
+            <input type="checkbox" name="isReimbursement" onchange="updateRetroactivePreview()" ${t.is_reimbursement ? "checked" : ""} ${Number(t.amount) <= 0 ? "disabled" : ""} />
             Reimbursement
           </label>
-          ${Number(t.amount) <= 0 ? `<p class="muted">Reimbursement can only be used for positive transactions.</p>` : ""}
-
-          <label class="inline-toggle">
-            <input type="checkbox" name="rememberMapping" ${t.is_reimbursement ? "disabled" : ""} />
-            Remember this mapping for future imports
-          </label>
-          <input type="text" name="mappingPattern" value="${normaliseText(t.note).slice(0, 40).replace(/"/g, "&quot;")}" placeholder="Pattern to remember, e.g. NETFLIX" />
-
+          <div class="mapping-review-panel">
+            <div class="mapping-review-heading">Optional merchant matching</div>
+            <p class="muted">Use the shared part of the merchant description (e.g. <strong>LIFEHUB</strong>). Shortening the pattern may find more matches.</p>
+            <label class="muted" for="editMappingPattern">Merchant pattern</label>
+            <input id="editMappingPattern" type="text" name="mappingPattern" value="${escapeReviewHtml(suggestMerchantPattern(t.note))}" placeholder="E.g. LIFEHUB" oninput="updateRetroactivePreview()" />
+            <label class="inline-toggle">
+              <input type="checkbox" name="rememberMapping" onchange="updateRetroactivePreview()" />
+              <span><strong>Remember this mapping</strong><small>Automatically classify future imports.</small></span>
+            </label>
+            <label class="inline-toggle">
+              <input type="checkbox" name="applyPrevious" onchange="updateRetroactivePreview()" />
+              <span><strong>Apply to previous transactions</strong><small>Only matching items in Needs Review; already categorised items stay unchanged.</small></span>
+            </label>
+            <div id="retroactivePreview" class="retroactive-preview"><span class="muted">Both options are off by default.</span></div>
+          </div>
           <div class="edit-actions">
             <button type="button" class="secondary" onclick="cancelEdit()">Cancel</button>
             <button type="submit" class="primary">Save</button>
@@ -4145,6 +4380,7 @@ function renderTransactionHistory() {
   const needsReview = getNeedsReviewTransactions();
   const needsReviewTotal = needsReview.reduce((sum, t) => sum + Math.abs(t.amount), 0);
   const allTransactions = getAllVisibleTransactions();
+  const existingSuggestions = getExistingRuleReviewSuggestions();
 
   const renderList = list => list.length
     ? list.map(t => `
@@ -4194,6 +4430,15 @@ function renderTransactionHistory() {
       <h2>Needs Review</h2>
       <span>${needsReview.length} items · ${dollars(needsReviewTotal)} unallocated</span>
     </div>
+    <section class="panel review-helper">
+      <strong>Clear repeat merchants faster</strong>
+      <p class="muted">Edit any exception and tick <b>Apply to previous transactions</b> to categorise similar items together. You can separately remember the pattern for future CSV imports.</p>
+      <button id="reprocessReviewButton" class="primary" onclick="reprocessExistingMappings()" ${existingSuggestions.results.length ? "" : "disabled"}>
+        Apply existing rules · ${existingSuggestions.results.length} matches
+      </button>
+      ${existingSuggestions.ambiguous ? `<p class="muted">${existingSuggestions.ambiguous} ambiguous matches excluded for manual review.</p>` : ""}
+      <p class="muted">Preview and confirmation required. Only transactions in Needs Review are eligible.</p>
+    </section>
     ${renderList(needsReview)}
 
     <div class="section-title">
@@ -4226,7 +4471,7 @@ function render() {
     <main>
       <div class="app-header">
         <h1 class="app-title">Goodman Finances Inc.</h1>
-        <div class="app-subtitle">Household financial control system · v22.3.2</div>
+        <div class="app-subtitle">Household financial control system · v22.4</div>
       </div>
 
       ${renderPageTabs()}
