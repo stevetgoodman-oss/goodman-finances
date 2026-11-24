@@ -1742,7 +1742,8 @@ const defaultWealth = {
     mortgage: 0,
     redraw: 0
   },
-  lastUpdated: null
+  lastUpdated: null,
+  cashBalanceAsOf: null
 };
 
 let wealth = JSON.parse(localStorage.getItem("wealth") || JSON.stringify(defaultWealth));
@@ -2329,7 +2330,7 @@ function downloadTransactionBackup() {
   const exportDate = new Date().toISOString().slice(0, 10);
   const backup = {
     format: "goodman-finances-transactions-v1",
-    appVersion: "22.5",
+    appVersion: "22.6",
     exportedAt: new Date().toISOString(),
     transactionCount: transactions.length,
     transactions
@@ -3329,17 +3330,59 @@ function toNumber(value) {
   return isNaN(n) ? 0 : n;
 }
 
+// v22.6: Backward-compatible cash fields. Old records contain householdCash only.
+// After the first v22.6 save, the split cash values are authoritative.
+function getGrossHouseholdCash(snapshot) {
+  if (snapshot && snapshot.directDebitsCash != null && snapshot.spendingCash != null) {
+    return toNumber(snapshot.directDebitsCash) + toNumber(snapshot.spendingCash);
+  }
+  return toNumber(snapshot && snapshot.householdCash);
+}
+function getCreditCardOwing(snapshot) {
+  return Math.max(0, toNumber(snapshot && snapshot.creditCardOwing));
+}
+function getNetHouseholdCash(snapshot) {
+  return getGrossHouseholdCash(snapshot) - getCreditCardOwing(snapshot);
+}
+// Use transaction dates, not import timestamps: an older CSV never falsely
+// makes a balance stale. Future-dated transactions are ignored.
+function latestImportedTransactionDate(today = new Date()) {
+  const todayISO = toISODateLocal(today);
+  let latest = null;
+  for (const tx of transactions) {
+    const date = String(tx && tx.date || "");
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date) && date <= todayISO && (!latest || date > latest)) latest = date;
+  }
+  return latest;
+}
+function cashFreshnessStatus(today = new Date()) {
+  const latestTransaction = latestImportedTransactionDate(today);
+  const balanceDate = wealth.cashBalanceAsOf || wealth.lastUpdated || null;
+  // No recorded balance date is not proof the figure is up to date.
+  return { latestTransaction, balanceDate, stale: !balanceDate || (!!latestTransaction && latestTransaction > balanceDate) };
+}
+// A scheduled card repayment settles an already deducted liability; it isn't
+// an additional outgoing in the net-cash projection.
+function isCreditCardSettlement(item) {
+  const name = String(item && item.name || "").toUpperCase();
+  const category = String(item && item.parent_category || "").toUpperCase();
+  const sub = String(item && item.sub_category || "").toUpperCase();
+  return /CREDIT[ -]?CARD (PAYMENT|REPAYMENT|SETTLEMENT)|CARD (PAYMENT|REPAYMENT|SETTLEMENT)|PAYMENT TO (CREDIT )?CARD/.test(name)
+    || /CREDIT[ -]?CARD (PAYMENT|REPAYMENT|SETTLEMENT)|CARD (PAYMENT|REPAYMENT|SETTLEMENT)/.test(sub)
+    || (category === "INTERNAL TRANSFER" && /CREDIT[ -]?CARD|CARD PAYMENT/.test(name));
+}
+
 function getWealthTotals(snapshot) {
   const superTotal = toNumber(snapshot.superSteve) + toNumber(snapshot.superLou);
   const etfTotal = toNumber(snapshot.etfVgs) + toNumber(snapshot.etfVas);
   const assets =
     toNumber(snapshot.property) +
-    toNumber(snapshot.householdCash) +
+    getGrossHouseholdCash(snapshot) +
     superTotal +
     etfTotal +
     toNumber(snapshot.cash);
 
-  const netWealth = assets - toNumber(snapshot.mortgage);
+  const netWealth = assets - toNumber(snapshot.mortgage) - getCreditCardOwing(snapshot);
   const liquidity = toNumber(snapshot.cash) + toNumber(snapshot.redraw);
 
   return {
@@ -3408,9 +3451,14 @@ function saveWealthSnapshot(e) {
     redraw: toNumber(form.baselineRedraw.value)
   };
 
+  const directDebitsCash = toNumber(form.currentDirectDebitsCash.value);
+  const spendingCash = toNumber(form.currentSpendingCash.value);
   wealth.current = {
     property: toNumber(form.currentProperty.value),
-    householdCash: toNumber(form.currentHouseholdCash.value),
+    householdCash: directDebitsCash + spendingCash,
+    directDebitsCash,
+    spendingCash,
+    creditCardOwing: Math.max(0, toNumber(form.currentCreditCardOwing.value)),
     superSteve: toNumber(form.currentSuperSteve.value),
     superLou: toNumber(form.currentSuperLou.value),
     etfVgs: toNumber(form.currentEtfVgs.value),
@@ -3420,7 +3468,8 @@ function saveWealthSnapshot(e) {
     redraw: toNumber(form.currentRedraw.value)
   };
 
-  wealth.lastUpdated = new Date().toISOString().slice(0, 10);
+  wealth.lastUpdated = toISODateLocal(new Date());
+  wealth.cashBalanceAsOf = form.cashBalanceAsOf.value || wealth.lastUpdated;
   wealthEditOpen = false;
   saveWealth();
 }
@@ -3488,9 +3537,13 @@ function renderWealth() {
         </div>
 
         <h2>Current</h2>
+        <label class="muted">Cash balances accurate as of</label>
+        <input type="date" name="cashBalanceAsOf" value="${wealth.cashBalanceAsOf || toISODateLocal(new Date())}" max="${toISODateLocal(new Date())}" required />
         <div class="wealth-form-grid">
           <label>Property<input name="currentProperty" type="number" step="1" value="${c.property}" /></label>
-          <label>Household cash<input name="currentHouseholdCash" type="number" step="1" value="${c.householdCash}" /></label>
+          <label>Direct debits account<input name="currentDirectDebitsCash" type="number" step="0.01" value="${c.directDebitsCash != null ? c.directDebitsCash : c.householdCash}" /></label>
+          <label>Household spending account<input name="currentSpendingCash" type="number" step="0.01" value="${c.spendingCash != null ? c.spendingCash : 0}" /></label>
+          <label>Credit card owing<input name="currentCreditCardOwing" type="number" min="0" step="0.01" value="${getCreditCardOwing(c)}" /></label>
           <label>Steve super<input name="currentSuperSteve" type="number" step="1" value="${c.superSteve}" /></label>
           <label>Lou super<input name="currentSuperLou" type="number" step="1" value="${c.superLou}" /></label>
           <label>VGS<input name="currentEtfVgs" type="number" step="1" value="${c.etfVgs}" /></label>
@@ -3513,6 +3566,7 @@ function renderWealth() {
         <span>Last updated</span>
         <strong>${wealth.lastUpdated || "Not set"}</strong>
       </div>
+      <div class="metric-row"><span>Cash balances as of</span><strong>${wealth.cashBalanceAsOf || wealth.lastUpdated || "Not set"}</strong></div>
       <button class="primary" onclick="setWealthEditOpen(true)">Update Wealth Snapshot</button>
     </section>
   `;
@@ -3560,9 +3614,11 @@ function renderWealth() {
 
       ${renderWealthCard(
         "Household Cash",
-        toNumber(c.householdCash),
-        toNumber(b.householdCash),
-        `<div class="sub-row"><span>Operational cash for regular purchases and direct debits</span><strong>${dollars(c.householdCash)}</strong></div>`
+        getNetHouseholdCash(c),
+        getNetHouseholdCash(b),
+        `<div class="sub-row"><span>Direct debits</span><strong>${dollars(c.directDebitsCash != null ? c.directDebitsCash : c.householdCash)}</strong></div>
+         <div class="sub-row"><span>Household spending</span><strong>${dollars(c.spendingCash)}</strong></div>
+         <div class="sub-row"><span>Credit card owing</span><strong>-${dollars(getCreditCardOwing(c))}</strong></div>`
       )}
 
       ${renderWealthCard(
@@ -3607,7 +3663,7 @@ function renderWealth() {
     </div>
     <section class="summary">
       <p class="muted">Available redraw is shown as contingency access, not as a net wealth asset.</p>
-      <div class="metric-row"><span>Household cash</span><strong>${dollars(c.householdCash)}</strong></div>
+      <div class="metric-row"><span>Net household cash (after card)</span><strong>${dollars(getNetHouseholdCash(c))}</strong></div>
       <div class="metric-row"><span>Project / holiday savings</span><strong>${dollars(c.cash)}</strong></div>
       <div class="metric-row"><span>Available redraw</span><strong>${dollars(c.redraw)}</strong></div>
       <div class="metric-row total"><span>Total access</span><strong>${dollars(currentTotals.liquidity)}</strong></div>
@@ -3837,12 +3893,13 @@ function renderDashboard() {
   const plannedSpendThisPeriod = cashflowTotal(expensesScheduledThisPeriod);
   const spendVsPlanBalance = plannedSpendSoFar - periodSummary.expenses;
 
-  const upcomingExpenses = getUpcomingCashflowsThisPayPeriod("obligation", today);
+  const upcomingExpenses = getUpcomingCashflowsThisPayPeriod("obligation", today).filter(item => !isCreditCardSettlement(item));
   const upcomingIncome = getUpcomingCashflowsThisPayPeriod("income", today);
   const upcomingExpensesTotal = cashflowTotal(upcomingExpenses);
   const upcomingIncomeTotal = cashflowTotal(upcomingIncome);
-  const currentAvailableCash = toNumber(wealth.current.householdCash);
+  const currentAvailableCash = getNetHouseholdCash(wealth.current);
   const expectedAvailableCash = currentAvailableCash + upcomingIncomeTotal - upcomingExpensesTotal;
+  const cashFreshness = cashFreshnessStatus(today);
   const allUpcomingCashflows = [...upcomingIncome.map(i => ({ ...i, direction: "+" })), ...upcomingExpenses.map(o => ({ ...o, direction: "-" }))]
     .sort((a, b) => a.occurrenceDate - b.occurrenceDate);
 
@@ -3982,10 +4039,13 @@ function renderDashboard() {
     </div>
     <section class="summary">
       <p class="muted">Known commitments remaining in this pay period.</p>
-      <div class="metric-row"><span>Household cash</span><strong>${dollars(currentAvailableCash)}</strong></div>
+      <div class="metric-row"><span>Net household cash</span><strong>${dollars(currentAvailableCash)}</strong></div>
+      <div class="sub-row"><span>Direct debits + spending</span><strong>${dollars(getGrossHouseholdCash(wealth.current))}</strong></div>
+      <div class="sub-row"><span>Credit card owing</span><strong>-${dollars(getCreditCardOwing(wealth.current))}</strong></div>
       <div class="metric-row"><span>Expected income</span><strong class="good">+${dollars(upcomingIncomeTotal)}</strong></div>
       <div class="metric-row"><span>Scheduled expenses</span><strong class="bad">-${dollars(upcomingExpensesTotal)}</strong></div>
       <div class="metric-row total"><span>Available after expenses</span><strong>${dollars(expectedAvailableCash)}</strong></div>
+      ${cashFreshness.stale ? `<div role="status" style="padding:12px 14px;margin:12px 0;border:1px solid #f59e0b;border-radius:10px;background:var(--amber-bg);color:#92400e;font-size:0.9rem"><strong>⚠ Cash balance is out of date</strong><div>Transactions are dated through ${cashFreshness.latestTransaction || "an unknown date"}; cash balances were last confirmed ${cashFreshness.balanceDate || "on no recorded date"}. Update your balances in Wealth to verify this forecast.</div></div>` : ""}
       <details class="cashflow-preview">
         <summary class="muted">View scheduled cashflows</summary>
         ${
@@ -4463,7 +4523,7 @@ function render() {
     <main>
       <div class="app-header">
         <h1 class="app-title">Goodman Finances Inc.</h1>
-        <div class="app-subtitle">Household financial control system · v22.5</div>
+        <div class="app-subtitle">Household financial control system · v22.6</div>
       </div>
 
       ${renderPageTabs()}
